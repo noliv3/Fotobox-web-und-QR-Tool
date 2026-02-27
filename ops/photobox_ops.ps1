@@ -215,19 +215,19 @@ function Test-SqliteSupport {
 
     $hasPdoSqlite = $moduleOutput -match '(?im)^pdo_sqlite\s*$'
     $hasSqlite3 = $moduleOutput -match '(?im)^sqlite3\s*$'
-    $ok = $hasPdoSqlite -or $hasSqlite3
+    $ok = $hasPdoSqlite
 
     if (-not $ok) {
         $message = @(
             'SQLite Support FEHLT. Der Webserver startet nicht.',
-            'Aktiviere in php.ini mindestens eine der Extensions: extension=pdo_sqlite oder extension=sqlite3.',
+            'Aktiviere in php.ini zwingend extension=pdo_sqlite (sqlite3 allein reicht für dieses Projekt nicht).',
             'Falls die Haupt-php.ini beschädigt ist, repariere sie oder nutze ein sauberes portables PHP unter runtime/php/.',
             'Die vollständige Ausgabe von "php --ini" und "php -m" steht in php.log.'
         ) -join ' '
         Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $message
         Write-PhotoboxLog -Path $PhpLog -Level 'ERROR' -Message $message
     } else {
-        Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message 'SQLite Support erkannt (pdo_sqlite oder sqlite3 vorhanden).'
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message ("SQLite Support erkannt (pdo_sqlite vorhanden, sqlite3_zusatz={0})." -f $hasSqlite3)
     }
 
     return [pscustomobject]@{
