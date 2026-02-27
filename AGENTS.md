@@ -39,7 +39,10 @@
 
 ## Kommandos
 ### 2026-02-27 – Verfügbare Befehle
-- start: `php -S 0.0.0.0:8000 -t web`
+- start: `./start.ps1` (Windows Supervisor-Start, startet PHP `-t web` auf konfiguriertem Port)
+- stop: `./stop.ps1` (beendet Supervisor/PHP best-effort)
+- status: `./status.ps1` (zeigt Supervisor/PHP/Port/Watcher + Log-Tail)
+- legacy start (manuell): `php -S 0.0.0.0:8000 -t web`
 - test: _derzeit nicht definiert (MVP ohne Testsuite)_
 - lint: _derzeit nicht definiert_
 - build: _nicht erforderlich (PHP ohne Build-Schritt)_
@@ -118,6 +121,17 @@
   - Fehlerfälle: `400 invalid_token`, `404 not_found`
   - Security: Token-Auflösung ausschließlich über DB
 
+
+## Ops (Windows)
+### 2026-02-27 – Supervisor, Watcher, Failure-Modes
+- Einstiegspunkt ist `./start.ps1` (PowerShell 5.1, keine Prompts, offline-first).
+- Supervisor überwacht alle 5 Sekunden: PHP-Prozess und Watcher-Subscriptions (Created/Renamed).
+- Watcher reagiert auf `*.jpg|*.jpeg`, wartet auf FileReady und triggert `php import/import_service.php ingest-file <path>`.
+- Logs unter `data/logs`: `supervisor.log`, `watcher.log`, `php.log` (ISO-Zeitstempel + Level + Nachricht).
+- Failure-Modes werden klar geloggt: Port belegt, PHP fehlt, Watch-Ordner fehlt/nicht schreibbar, Prozess ExitCode, fehlende Admin-Rechte für Firewall-Regel.
+- Firewall: bei Admin automatische Regel via `New-NetFirewallRule`, sonst exakten Admin-Befehl ausgeben (ohne Interaktion).
+- Kamera-/Druckerchecks sind best-effort; fehlende Kamera bzw. ausbleibende Bilder (`camera_idle_minutes`, Default 30) führen nur zu Warnungen.
+
 ## Security & Privacy Regeln für Code-Änderungen
 ### 2026-02-27 – Verbindliche MVP-Regeln
 - Token-URLs für Medienzugriff, keine direkten Dateipfade nach außen
@@ -163,6 +177,7 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-02-27 – Ops Commands und Windows-Supervisor/Watcher-Verhalten inklusive Logs und Failure-Modes ergänzt.
 - 2026-02-27 – Web-Endpunkte und API-Verhalten (Parameter, Responses, Errors) konkretisiert.
 - 2026-02-27 – Offline-first Regeln als verbindlicher Web-Standard ergänzt.
 - 2026-02-27 – Module, Kommandos, DB-Schema und API-Endpunkte für MVP ergänzt.
