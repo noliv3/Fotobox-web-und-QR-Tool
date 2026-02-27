@@ -53,6 +53,8 @@ Wichtige Schlüssel:
 - Status erfolgt über `./status.ps1` (zeigt Prozessstatus, Port-Check, Watcher-Status und Log-Tails).
 - Logs liegen in `data/logs`: `supervisor.log`, `watcher.log`, `php.log`.
 - Start prüft Port, Firewall-Regel, Watch-Ordner, Kamera-/Drucker-Hinweise und protokolliert Failure-Modes ohne interaktive Prompts.
+- Log-Sync von PHP-Process-Redirection ist lock-tolerant: Dateilesen erfolgt mit `FileShare.ReadWrite`, nutzt Retry-Backoff (100/300/800 ms) und schreibt bei weiterhin gelockter Datei nur `WARN`, damit `start.ps1` weiterläuft.
+- `start.ps1` kapselt `Sync-PhpProcessLogs` in Supervisor-Loop und Shutdown-Phase in `try/catch`; Log-Sync-Fehler führen nicht mehr zum Supervisor-Abbruch.
 
 
 ### 2026-02-27 – Windows PHP-Diagnose und SQLite-Pflicht
@@ -110,6 +112,7 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-02-27 – Windows Ops Loghandling gehärtet: `Sync-PhpProcessLogs` liest Redirect-Logs lock-tolerant (`FileShare.ReadWrite`) mit Retry/Backoff (100/300/800 ms), schreibt bei persistierendem Lock `WARN` und läuft weiter; `start.ps1` behandelt Log-Sync-Fehler defensiv ohne Crash.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus `php -v/--ini/-m`-Diagnose werden beim Schreiben in `php.log` ignoriert, damit `Write-PhotoboxLog` nicht mit leerer `Message` fehlschlägt.
 - 2026-02-27 – Galerie-Auth umgestellt: `/gallery/` öffentlich/read-only, optionales `/gallery/admin.php` mit `pb_admin`-Session, Default `admin_password_hash=CHANGE_ME` (Admin deaktiviert); Ops-Fixes: SQLite-Preflight verlangt `pdo_sqlite`, `status.ps1` funktioniert ohne vorherigen Start durch `data/logs`-Autocreate.
 - 2026-02-27 – Windows Run stabilisiert: PHP-Konfigurationsdiagnose (`php -v/--ini/-m`), SQLite-Pflichtprüfung, Crash-Backoff (5/10/20/40/60s), HALT nach 5 Crashes, Root-Redirect `web/index.php` ergänzt.

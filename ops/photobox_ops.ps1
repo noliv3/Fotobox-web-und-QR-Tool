@@ -377,33 +377,107 @@ function Start-PhotoboxPhpServer {
     }
 }
 
+function Read-TextFileShared {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fileStream = $null
+    $reader = $null
+
+    try {
+        $fileStream = New-Object System.IO.FileStream(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite
+        )
+        $reader = New-Object System.IO.StreamReader($fileStream, [System.Text.Encoding]::UTF8, $true)
+        return $reader.ReadToEnd()
+    } finally {
+        if ($null -ne $reader) {
+            $reader.Dispose()
+        } elseif ($null -ne $fileStream) {
+            $fileStream.Dispose()
+        }
+    }
+}
+
 function Sync-PhpProcessLogs {
     param(
         [Parameter(Mandatory = $true)]$PhpRuntime,
         [Parameter(Mandatory = $true)][string]$PhpLog
     )
 
-    foreach ($item in @(
-        @{ Path = $PhpRuntime.StdOutPath; Key = 'StdOutOffset'; Stream = 'STDOUT' },
-        @{ Path = $PhpRuntime.StdErrPath; Key = 'StdErrOffset'; Stream = 'STDERR' }
-    )) {
-        if (-not (Test-Path -LiteralPath $item.Path)) {
-            continue
+    $mutexName = 'Global\Photobox.SyncPhpProcessLogs'
+    $syncMutex = $null
+    $hasMutex = $false
+
+    try {
+        $syncMutex = New-Object System.Threading.Mutex($false, $mutexName)
+        try {
+            $hasMutex = $syncMutex.WaitOne(2000)
+        } catch [System.Threading.AbandonedMutexException] {
+            $hasMutex = $true
         }
 
-        $raw = [System.IO.File]::ReadAllText($item.Path)
-        $offset = [int]$PhpRuntime.($item.Key)
-        if ($offset -lt 0) { $offset = 0 }
-        if ($offset -gt $raw.Length) { $offset = 0 }
+        if (-not $hasMutex) {
+            Write-PhotoboxLog -Path $PhpLog -Level 'WARN' -Message 'Log-Sync übersprungen: Mutex konnte nicht innerhalb von 2000ms übernommen werden.'
+            return
+        }
 
-        if ($raw.Length -gt $offset) {
-            $newContent = $raw.Substring($offset)
-            foreach ($line in ($newContent -split "`r?`n")) {
-                if (-not [string]::IsNullOrWhiteSpace($line)) {
-                    Write-PhotoboxLog -Path $PhpLog -Level $item.Stream -Message $line
+        foreach ($item in @(
+            @{ Path = $PhpRuntime.StdOutPath; Key = 'StdOutOffset'; Stream = 'STDOUT' },
+            @{ Path = $PhpRuntime.StdErrPath; Key = 'StdErrOffset'; Stream = 'STDERR' }
+        )) {
+            if (-not (Test-Path -LiteralPath $item.Path)) {
+                continue
+            }
+
+            $raw = $null
+            $readOk = $false
+            $retryDelaysMs = @(100, 300, 800)
+
+            for ($attempt = 0; $attempt -lt $retryDelaysMs.Count; $attempt++) {
+                try {
+                    $raw = Read-TextFileShared -Path $item.Path
+                    $readOk = $true
+                    break
+                } catch [System.IO.IOException] {
+                    $attemptHuman = $attempt + 1
+                    if ($attempt -lt ($retryDelaysMs.Count - 1)) {
+                        Start-Sleep -Milliseconds $retryDelaysMs[$attempt]
+                    } else {
+                        Write-PhotoboxLog -Path $PhpLog -Level 'WARN' -Message ("Log-Sync für {0} übersprungen: Datei {1} nach {2} Versuchen weiter gelockt ({3})." -f $item.Stream, $item.Path, $attemptHuman, $_.Exception.Message)
+                    }
+                } catch {
+                    Write-PhotoboxLog -Path $PhpLog -Level 'WARN' -Message ("Log-Sync für {0} übersprungen: Unerwarteter Lesefehler bei {1} ({2})." -f $item.Stream, $item.Path, $_.Exception.Message)
+                    break
                 }
             }
-            $PhpRuntime.($item.Key) = $raw.Length
+
+            if (-not $readOk) {
+                continue
+            }
+
+            $offset = [int]$PhpRuntime.($item.Key)
+            if ($offset -lt 0) { $offset = 0 }
+            if ($offset -gt $raw.Length) { $offset = 0 }
+
+            if ($raw.Length -gt $offset) {
+                $newContent = $raw.Substring($offset)
+                foreach ($line in ($newContent -split "`r?`n")) {
+                    if (-not [string]::IsNullOrWhiteSpace($line)) {
+                        Write-PhotoboxLog -Path $PhpLog -Level $item.Stream -Message $line
+                    }
+                }
+                $PhpRuntime.($item.Key) = $raw.Length
+            }
+        }
+    } finally {
+        if ($hasMutex -and $null -ne $syncMutex) {
+            [void]$syncMutex.ReleaseMutex()
+        }
+        if ($null -ne $syncMutex) {
+            $syncMutex.Dispose()
         }
     }
 }
