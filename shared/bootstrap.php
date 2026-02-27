@@ -81,6 +81,13 @@ function pdo(): PDO
         return $pdo;
     }
 
+    if (!extension_loaded('pdo_sqlite')) {
+        throw new RuntimeException(
+            'pdo_sqlite fehlt. Bitte in php.ini aktivieren: extension=pdo_sqlite und optional extension=sqlite3. '
+            . 'Zusätzlich php --ini prüfen und defekte zusätzliche INI-Dateien reparieren.'
+        );
+    }
+
     ensureAppDirs();
     $pdo = new PDO('sqlite:' . dbPath());
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

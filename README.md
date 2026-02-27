@@ -53,6 +53,20 @@ Wichtige Schlüssel:
 - Logs liegen in `data/logs`: `supervisor.log`, `watcher.log`, `php.log`.
 - Start prüft Port, Firewall-Regel, Watch-Ordner, Kamera-/Drucker-Hinweise und protokolliert Failure-Modes ohne interaktive Prompts.
 
+
+### 2026-02-27 – Windows PHP-Diagnose und SQLite-Pflicht
+- `./start.ps1` prüft vor dem Serverstart zwingend `php -v`, `php --ini` und `php -m`.
+- Bei Parse-/INI-Fehlern (z. B. `Parse error`, `Command line code`) startet der PHP-Server **nicht**; Supervisor setzt Fehlerstatus statt Endlos-Restart.
+- SQLite ist Pflicht für den MVP: `pdo_sqlite` (empfohlen) oder `sqlite3` muss in `php -m` vorhanden sein.
+- Logs enthalten bei Fehlern immer die vollständige Diagnoseausgabe von `php --ini` und `php -m` in `data/logs/php.log`.
+
+#### Konkreter Fix für php.ini (Windows)
+1. In der aktiven `php.ini` (siehe `php --ini`) aktivieren:
+   - `extension=pdo_sqlite`
+   - `extension=sqlite3`
+2. Zusätzliche INI-Dateien auf Syntaxfehler prüfen (insbesondere bei Meldungen mit `Command line code`/`Parse error`).
+3. Falls die INI-Landschaft beschädigt ist: portable, saubere PHP-Version unter `runtime/php/` verwenden oder bestehende INI-Dateien reparieren.
+
 ### Initialisieren
 ```bash
 php import/import_service.php init-db
@@ -85,6 +99,7 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-02-27 – Windows Run stabilisiert: PHP-Konfigurationsdiagnose (`php -v/--ini/-m`), SQLite-Pflichtprüfung, Crash-Backoff (5/10/20/40/60s), HALT nach 5 Crashes, Root-Redirect `web/index.php` ergänzt.
 - 2026-02-27 – Windows Ops ergänzt: `start.ps1` Supervisor/Watcher, `stop.ps1`, `status.ps1`, Firewall- und Gerätechecks, LAN-Offline-Betrieb.
 - 2026-02-27 – Web-Ebene implementiert: Mobile Galerie, Alle-Fotos-Ansicht, Bestellung, Print-Job-API, Admin-Statusseite.
 - 2026-02-27 – Offline-first Setup ergänzt: Router-/QR-URL-Hinweise, keine externen Assets/Requests.
