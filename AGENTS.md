@@ -128,7 +128,8 @@
 - Supervisor überwacht alle 5 Sekunden: PHP-Prozess und Watcher-Subscriptions (Created/Renamed).
 - Watcher reagiert auf `*.jpg|*.jpeg`, wartet auf FileReady und triggert `php import/import_service.php ingest-file <path>`.
 - Logs unter `data/logs`: `supervisor.log`, `watcher.log`, `php.log` (ISO-Zeitstempel + Level + Nachricht).
-- Failure-Modes werden klar geloggt: Port belegt, PHP fehlt, Watch-Ordner fehlt/nicht schreibbar, Prozess ExitCode, fehlende Admin-Rechte für Firewall-Regel.
+- Failure-Modes werden klar geloggt: Port belegt, PHP fehlt, PHP-INI Parse-Fehler (`Parse error`/`Command line code`), fehlender SQLite-Treiber (`pdo_sqlite`/`sqlite3`), Watch-Ordner fehlt/nicht schreibbar, Prozess ExitCode, fehlende Admin-Rechte für Firewall-Regel.
+- Supervisor-Restart-Strategie: exponentieller Backoff (5s, 10s, 20s, 40s, max. 60s), nach 5 PHP-Crashes Status `HALT` ohne Endlosloop.
 - Firewall: bei Admin automatische Regel via `New-NetFirewallRule`, sonst exakten Admin-Befehl ausgeben (ohne Interaktion).
 - Kamera-/Druckerchecks sind best-effort; fehlende Kamera bzw. ausbleibende Bilder (`camera_idle_minutes`, Default 30) führen nur zu Warnungen.
 
@@ -177,6 +178,7 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-02-27 – Windows Run-Härtung ergänzt: PHP-Config-Preflight (`php -v/--ini/-m`), SQLite-Treiber-Check, Crash-Backoff/HALT und Root-Redirect auf `/mobile/`.
 - 2026-02-27 – Ops Commands und Windows-Supervisor/Watcher-Verhalten inklusive Logs und Failure-Modes ergänzt.
 - 2026-02-27 – Web-Endpunkte und API-Verhalten (Parameter, Responses, Errors) konkretisiert.
 - 2026-02-27 – Offline-first Regeln als verbindlicher Web-Standard ergänzt.

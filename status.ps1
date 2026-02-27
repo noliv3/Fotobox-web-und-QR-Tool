@@ -14,6 +14,24 @@ $phpRunning = $false
 $supervisorRunning = $false
 $portReachable = $false
 
+$phpConfigState = 'FAIL'
+$sqliteState = 'FAIL'
+
+try {
+    $phpExe = Get-PhpExecutable -RepoRoot $repoRoot -SupervisorLog $supervisorLog
+    $phpConfigResult = Test-PhpConfig -PhpExe $phpExe -PhpLog $phpLog -SupervisorLog $supervisorLog
+    if ($phpConfigResult.Ok) {
+        $phpConfigState = 'OK'
+    }
+
+    $sqliteResult = Test-SqliteSupport -PhpConfigResult $phpConfigResult -SupervisorLog $supervisorLog -PhpLog $phpLog
+    if ($sqliteResult.Ok) {
+        $sqliteState = 'OK'
+    }
+} catch {
+    Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message ("Status-Diagnose fehlgeschlagen: {0}" -f $_.Exception.Message)
+}
+
 if ($null -ne $state) {
     if ($state.php_pid) {
         $phpRunning = $null -ne (Get-Process -Id ([int]$state.php_pid) -ErrorAction SilentlyContinue)
@@ -32,11 +50,16 @@ try {
 Write-Host "Supervisor läuft: $supervisorRunning"
 Write-Host "PHP läuft: $phpRunning"
 Write-Host "Port $($config.port) erreichbar: $portReachable"
+Write-Host "PHP config: $phpConfigState"
+Write-Host "SQLite support: $sqliteState"
+
 $watcherState = if ($null -ne $state) { $state.watcher_active } else { $false }
 $heartbeat = if ($null -ne $state) { $state.last_heartbeat } else { 'n/a' }
+$status = if ($null -ne $state -and $state.status) { $state.status } else { 'n/a' }
 
 Write-Host "Watcher aktiv (letzter State): $watcherState"
 Write-Host "Letzter Heartbeat: $heartbeat"
+Write-Host "Supervisor Status: $status"
 
 Write-Host ''
 Write-Host 'Letzte Supervisor-Logzeilen:'

@@ -128,6 +128,115 @@ function Install-PortablePhp {
     }
 }
 
+function Invoke-PhpCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$PhpExe,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $output = @(& $PhpExe @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+
+    return [pscustomobject]@{
+        ExitCode = [int]$exitCode
+        Output = ($output -join [Environment]::NewLine)
+        Arguments = ($Arguments -join ' ')
+    }
+}
+
+function Test-PhpConfig {
+    param(
+        [Parameter(Mandatory = $true)][string]$PhpExe,
+        [Parameter(Mandatory = $true)][string]$PhpLog,
+        [Parameter(Mandatory = $true)][string]$SupervisorLog
+    )
+
+    $commands = @(
+        @('-v'),
+        @('--ini'),
+        @('-m')
+    )
+
+    $results = @{}
+    $configOk = $true
+
+    Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message "PHP Diagnostik gestartet für: $PhpExe"
+
+    foreach ($commandArgs in $commands) {
+        $result = Invoke-PhpCommand -PhpExe $PhpExe -Arguments $commandArgs
+        $key = $commandArgs[0]
+        $results[$key] = $result
+
+        Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message "php $($result.Arguments) ExitCode=$($result.ExitCode)"
+        if ([string]::IsNullOrWhiteSpace($result.Output)) {
+            Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message 'Keine Ausgabe.'
+        } else {
+            foreach ($line in ($result.Output -split "`r?`n")) {
+                Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message $line
+            }
+        }
+
+        $hasParseIndicator = $result.Output -match 'Parse error' -or $result.Output -match 'Command line code'
+        if ($result.ExitCode -ne 0 -or $hasParseIndicator) {
+            $configOk = $false
+        }
+    }
+
+    if (-not $configOk) {
+        $help = @(
+            'PHP Konfiguration FEHLERHAFT erkannt. Der Webserver startet nicht.',
+            'Prüfe php.ini und zusätzliche INI-Dateien auf Syntax-/Parse-Fehler.',
+            'Insbesondere Fehlermeldungen mit "Command line code" oder "Parse error" beheben.',
+            'Nutze die oben geloggte Ausgabe von "php --ini" um die geladenen INI-Dateien zu prüfen.'
+        ) -join ' '
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $help
+        Write-PhotoboxLog -Path $PhpLog -Level 'ERROR' -Message $help
+    }
+
+    return [pscustomobject]@{
+        Ok = $configOk
+        Version = $results['-v']
+        Ini = $results['--ini']
+        Modules = $results['-m']
+    }
+}
+
+function Test-SqliteSupport {
+    param(
+        [Parameter(Mandatory = $true)]$PhpConfigResult,
+        [Parameter(Mandatory = $true)][string]$SupervisorLog,
+        [Parameter(Mandatory = $true)][string]$PhpLog
+    )
+
+    $moduleOutput = ''
+    if ($null -ne $PhpConfigResult -and $null -ne $PhpConfigResult.Modules) {
+        $moduleOutput = [string]$PhpConfigResult.Modules.Output
+    }
+
+    $hasPdoSqlite = $moduleOutput -match '(?im)^pdo_sqlite\s*$'
+    $hasSqlite3 = $moduleOutput -match '(?im)^sqlite3\s*$'
+    $ok = $hasPdoSqlite -or $hasSqlite3
+
+    if (-not $ok) {
+        $message = @(
+            'SQLite Support FEHLT. Der Webserver startet nicht.',
+            'Aktiviere in php.ini mindestens eine der Extensions: extension=pdo_sqlite oder extension=sqlite3.',
+            'Falls die Haupt-php.ini beschädigt ist, repariere sie oder nutze ein sauberes portables PHP unter runtime/php/.',
+            'Die vollständige Ausgabe von "php --ini" und "php -m" steht in php.log.'
+        ) -join ' '
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $message
+        Write-PhotoboxLog -Path $PhpLog -Level 'ERROR' -Message $message
+    } else {
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message 'SQLite Support erkannt (pdo_sqlite oder sqlite3 vorhanden).'
+    }
+
+    return [pscustomobject]@{
+        Ok = $ok
+        HasPdoSqlite = [bool]$hasPdoSqlite
+        HasSqlite3 = [bool]$hasSqlite3
+    }
+}
+
 function Test-PortAvailable {
     param([Parameter(Mandatory = $true)][int]$Port)
 
@@ -239,9 +348,73 @@ function Start-PhotoboxPhpServer {
         [Parameter(Mandatory = $true)][string]$PhpLog
     )
 
-    $command = '"{0}" -S 0.0.0.0:{1} -t web >> "{2}" 2>>&1' -f $PhpExe, $Config.port, $PhpLog
-    $process = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WorkingDirectory $Config.repo_root -PassThru -WindowStyle Hidden
-    return $process
+    $stdoutPath = Join-Path $Config.logs_path 'php.stdout.current.log'
+    $stderrPath = Join-Path $Config.logs_path 'php.stderr.current.log'
+
+    Set-Content -LiteralPath $stdoutPath -Value '' -Encoding UTF8
+    Set-Content -LiteralPath $stderrPath -Value '' -Encoding UTF8
+
+    $process = Start-Process -FilePath $PhpExe `
+        -ArgumentList @("-S", "0.0.0.0:$($Config.port)", "-t", "web") `
+        -WorkingDirectory $Config.repo_root `
+        -PassThru `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutPath `
+        -RedirectStandardError $stderrPath
+
+    Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message "PHP Server Start-Process PID=$($process.Id) Port=$($Config.port)"
+
+    return [pscustomobject]@{
+        Process = $process
+        StdOutPath = $stdoutPath
+        StdErrPath = $stderrPath
+        StdOutOffset = 0
+        StdErrOffset = 0
+    }
+}
+
+function Sync-PhpProcessLogs {
+    param(
+        [Parameter(Mandatory = $true)]$PhpRuntime,
+        [Parameter(Mandatory = $true)][string]$PhpLog
+    )
+
+    foreach ($item in @(
+        @{ Path = $PhpRuntime.StdOutPath; Key = 'StdOutOffset'; Stream = 'STDOUT' },
+        @{ Path = $PhpRuntime.StdErrPath; Key = 'StdErrOffset'; Stream = 'STDERR' }
+    )) {
+        if (-not (Test-Path -LiteralPath $item.Path)) {
+            continue
+        }
+
+        $raw = [System.IO.File]::ReadAllText($item.Path)
+        $offset = [int]$PhpRuntime.($item.Key)
+        if ($offset -lt 0) { $offset = 0 }
+        if ($offset -gt $raw.Length) { $offset = 0 }
+
+        if ($raw.Length -gt $offset) {
+            $newContent = $raw.Substring($offset)
+            foreach ($line in ($newContent -split "`r?`n")) {
+                if (-not [string]::IsNullOrWhiteSpace($line)) {
+                    Write-PhotoboxLog -Path $PhpLog -Level $item.Stream -Message $line
+                }
+            }
+            $PhpRuntime.($item.Key) = $raw.Length
+        }
+    }
+}
+
+function Get-PhpLogTail {
+    param(
+        [Parameter(Mandatory = $true)][string]$PhpLog,
+        [int]$Tail = 30
+    )
+
+    if (-not (Test-Path -LiteralPath $PhpLog)) {
+        return @('php.log nicht vorhanden.')
+    }
+
+    return @(Get-Content -LiteralPath $PhpLog -Tail $Tail)
 }
 
 function Wait-FileReady {
@@ -304,7 +477,6 @@ function Start-PhotoboxWatcher {
 
         $logPath = $Event.MessageData.WatcherLog
         $phpExe = $Event.MessageData.PhpExe
-        $repoRoot = $Event.MessageData.RepoRoot
         $marker = $Event.MessageData.LastImageMarker
 
         $ts = (Get-Date).ToString('s')
