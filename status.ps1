@@ -4,6 +4,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ops/photobox_ops.ps1')
 
 $repoRoot = Get-RepoRoot
+$logsPath = Join-Path $repoRoot 'data\logs'
+New-Item -Path $logsPath -ItemType Directory -Force | Out-Null
+
 $config = Get-PhotoboxConfig -RepoRoot $repoRoot
 $supervisorLog = Join-Path $config.logs_path 'supervisor.log'
 $watcherLog = Join-Path $config.logs_path 'watcher.log'

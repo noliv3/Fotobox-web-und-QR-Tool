@@ -14,7 +14,8 @@ return [
     'camera_idle_minutes' => 30,
     'printer_name' => '',
     'print_api_key' => 'CHANGE_ME_PRINT_API_KEY',
-    'admin_password_hash_placeholder' => 'CHANGE_ME_ADMIN_PASSWORD_HASH',
+    // Hash erzeugen mit: php -r "echo password_hash('DEINPASS', PASSWORD_DEFAULT), PHP_EOL;"
+    'admin_password_hash' => 'CHANGE_ME',
     'rate_limit_max' => 6,
     'rate_limit_window_seconds' => 60,
 ];

@@ -6,55 +6,6 @@ require_once __DIR__ . '/../../shared/bootstrap.php';
 
 noCacheHeaders();
 
-session_name('pb_admin');
-session_start();
-
-$cfg = config();
-$error = '';
-
-if (($_POST['action'] ?? '') === 'logout') {
-    $_SESSION = [];
-    session_destroy();
-    header('Location: index.php');
-    exit;
-}
-
-if (!($_SESSION['admin_ok'] ?? false)) {
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-        $password = (string) ($_POST['password'] ?? '');
-        if (password_verify($password, (string) $cfg['admin_password_hash_placeholder'])) {
-            $_SESSION['admin_ok'] = true;
-            header('Location: index.php');
-            exit;
-        }
-        $error = 'Login fehlgeschlagen.';
-    }
-
-    ?>
-    <!doctype html>
-    <html lang="de">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Admin Login</title>
-        <link rel="stylesheet" href="style.css">
-    </head>
-    <body>
-    <main class="container narrow">
-        <h1>Admin Login</h1>
-        <?php if ($error !== ''): ?><p class="error"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></p><?php endif; ?>
-        <form method="post" class="panel stack">
-            <label for="password">Passwort</label>
-            <input id="password" name="password" type="password" required>
-            <button type="submit">Anmelden</button>
-        </form>
-    </main>
-    </body>
-    </html>
-    <?php
-    exit;
-}
-
 $pdo = pdo();
 $oneHourAgo = nowTs() - 3600;
 
@@ -78,14 +29,14 @@ $lastJobs = $pdo->query('SELECT id, status, error, created_ts FROM print_jobs OR
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Admin Status</title>
+    <title>Galerie Status</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main class="container">
     <header class="header-row">
-        <h1>Admin Statusseite</h1>
-        <form method="post"><button type="submit" name="action" value="logout">Logout</button></form>
+        <h1>Galerie Statusseite</h1>
+        <a href="admin.php">Admin</a>
     </header>
 
     <section class="panel stats-grid">
