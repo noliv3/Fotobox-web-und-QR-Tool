@@ -13,6 +13,11 @@
 ## Projektstruktur
 - `README.md`: Human-First Projekt- und Betriebsübersicht
 - `AGENTS.md`: Agent-First Arbeits-, Architektur- und Dokumentationsstandard
+- `web/gallery`: Galerie-Websegment für Anzeige freigegebener Fotos
+- `web/mobile`: Handy-Websegment für mobile Interaktionen
+- `import`: Importdienst-Segment für Fotoübernahme (USB/SD)
+- `shared`: Gemeinsame Konfigurations- und Utility-Stubs
+- `data`: Eventdaten (originals, thumbs, queue, logs); niemals ins Repo committen außer `.gitkeep`
 - Weitere Projektpfade/Ordner sind bei Einführung hier mit Zweck und Verantwortlichkeit zu ergänzen
 
 ## Kernmodule
@@ -123,5 +128,6 @@ NEVER:
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-02-27 – Projektstruktur aktualisiert: Segmentpfade und Verantwortlichkeiten ergänzt; Hinweis zu `data/` und `.gitkeep` ergänzt.
 - 2026-02-27 – Verbindlichen Dokumentationsstandard, Boundaries, Decision-Log-Format und Pflichtinhalte ergänzt.
 - 2026-02-27 – Initiale Arbeitsregeln und Rollen dokumentiert.

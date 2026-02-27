@@ -27,6 +27,14 @@ Preise, Pakete und Buchungslogik werden projektspezifisch gepflegt. Diese Inform
 ## Setup Kurzinfo
 High-Level Setup: Kamera/Fotobox erzeugt Bilder, Importprozess übernimmt Dateien, Webkomponente stellt Galerie bereit, Druckkomponente verarbeitet Druckaufträge. Detaillierte Implementierungs- und Betriebsdetails werden ausschließlich in README.md und AGENTS.md ergänzt.
 
+## Struktur
+### 2026-02-27 – Segmentstruktur
+- `web/gallery`: Galerie-Websegment für die öffentliche Anzeige freigegebener Eventfotos.
+- `web/mobile`: Handy-Websegment für mobile Interaktion und spätere Upload-/Steuerflüsse.
+- `import`: Importdienst-Segment zur Übernahme neuer Fotos aus Aufnahmequellen.
+- `shared`: Gemeinsame Stubs für Konfiguration, Bootstrap und Utility-Schnittstellen.
+- `data`: Lokale Datenpfade für Originale, Thumbnails, Queue und Logs.
+
 ## Dokumentationsrichtlinie
 ### 2026-02-27 – Dokumentationsrichtlinie (verbindlich)
 
@@ -54,5 +62,6 @@ High-Level Setup: Kamera/Fotobox erzeugt Bilder, Importprozess übernimmt Dateie
 - Decision Log: datierte Architekturentscheidungen (ADR-light)
 
 ## Changelog
+- 2026-02-27 – Struktur: drei Segmente (gallery, mobile, import) sowie shared- und data-Ordner als Grundgerüst ergänzt.
 - 2026-02-27 – Verbindliche Dokumentationsrichtlinie ergänzt und README auf Human-First-Struktur ausgerichtet.
 - 2026-02-27 – Initiale Repo-Struktur und Basisdokumentation.
