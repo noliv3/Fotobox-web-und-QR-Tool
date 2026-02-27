@@ -141,8 +141,9 @@
 - Supervisor überwacht alle 5 Sekunden: PHP-Prozess und Watcher-Subscriptions (Created/Renamed).
 - Watcher reagiert auf `*.jpg|*.jpeg`, wartet auf FileReady und triggert `php import/import_service.php ingest-file <path>`.
 - Logs unter `data/logs`: `supervisor.log`, `watcher.log`, `php.log` (ISO-Zeitstempel + Level + Nachricht).
-- Failure-Modes werden klar geloggt: Port belegt, PHP fehlt, PHP-INI Parse-Fehler (`Parse error`/`Command line code`), fehlender SQLite-Treiber (`pdo_sqlite` Pflicht; `sqlite3` nur Zusatzinfo), Watch-Ordner fehlt/nicht schreibbar, Prozess ExitCode, fehlende Admin-Rechte für Firewall-Regel.
+- Failure-Modes werden klar geloggt: Port belegt, PHP fehlt, PHP-INI Parse-Fehler (`Parse error`/`Command line code`), fehlender SQLite-Treiber (`pdo_sqlite` Pflicht; `sqlite3` nur Zusatzinfo), Watch-Ordner fehlt/nicht schreibbar, Prozess ExitCode, fehlende Admin-Rechte für Firewall-Regel, gelockte PHP-Redirect-Logdatei.
 - Supervisor-Restart-Strategie: exponentieller Backoff (5s, 10s, 20s, 40s, max. 60s), nach 5 PHP-Crashes Status `HALT` ohne Endlosloop.
+- PHP-Log-Sync ist lock-tolerant: Shared-Read mit `FileShare.ReadWrite`, Retry-Backoff (100/300/800 ms), danach `WARN` und fortsetzen ohne Supervisor-Abbruch; Zugriff wird per benanntem Mutex serialisiert.
 - Firewall: bei Admin automatische Regel via `New-NetFirewallRule`, sonst exakten Admin-Befehl ausgeben (ohne Interaktion).
 - `status.ps1` erzeugt `data/logs` bei Bedarf automatisch und läuft damit auch ohne vorherigen `start.ps1` robust durch.
 - Kamera-/Druckerchecks sind best-effort; fehlende Kamera bzw. ausbleibende Bilder (`camera_idle_minutes`, Default 30) führen nur zu Warnungen.
@@ -192,6 +193,7 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-02-27 – Ops-Log-Sync gehärtet: lock-tolerantes Lesen von `php.stdout.current.log`/`php.stderr.current.log` via `FileShare.ReadWrite`, Retry-Backoff (100/300/800 ms), danach `WARN` + Continue; Zugriff serialisiert per Mutex, `start.ps1` fängt Sync-Fehler defensiv ab.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus der PHP-Diagnoseausgabe (`php -v/--ini/-m`) werden beim Schreiben nach `php.log` übersprungen, damit `Write-PhotoboxLog` keinen leeren `Message`-Parameter erhält.
 - 2026-02-27 – Galerie-Auth geändert: `/gallery/` öffentlich (read-only), `/gallery/admin.php` optional passwortgeschützt und nur aktiv mit gesetztem `admin_password_hash` (nicht `CHANGE_ME`). Zusätzlich Ops-Fixes: SQLite-Preflight akzeptiert nur `pdo_sqlite`, `status.ps1` erstellt `data/logs` selbst.
 - 2026-02-27 – Windows Run-Härtung ergänzt: PHP-Config-Preflight (`php -v/--ini/-m`), SQLite-Treiber-Check, Crash-Backoff/HALT und Root-Redirect auf `/mobile/`.

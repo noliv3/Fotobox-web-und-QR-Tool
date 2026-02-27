@@ -87,7 +87,11 @@ $maxBackoff = 60
 try {
     while ($true) {
         Start-Sleep -Seconds 5
-        Sync-PhpProcessLogs -PhpRuntime $phpRuntime -PhpLog $phpLog
+        try {
+            Sync-PhpProcessLogs -PhpRuntime $phpRuntime -PhpLog $phpLog
+        } catch {
+            Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("Log-Sync Fehler ignoriert (Supervisor läuft weiter): {0}" -f $_.Exception.Message)
+        }
 
         if ($phpProcess.HasExited) {
             $crashCount++
@@ -155,7 +159,11 @@ try {
     Stop-PhotoboxWatcher -Bundle $watcherBundle
 
     if ($null -ne $phpRuntime) {
-        Sync-PhpProcessLogs -PhpRuntime $phpRuntime -PhpLog $phpLog
+        try {
+            Sync-PhpProcessLogs -PhpRuntime $phpRuntime -PhpLog $phpLog
+        } catch {
+            Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("Abschluss-Log-Sync Fehler ignoriert: {0}" -f $_.Exception.Message)
+        }
     }
 
     if ($null -ne $phpProcess -and -not $phpProcess.HasExited) {
