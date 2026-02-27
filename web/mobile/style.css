@@ -1,4 +1,73 @@
-/* Handy-Web Stylesheet (Stub) */
-/* TODO: Mobile-first Layoutstruktur definieren. */
-/* TODO: Touch-optimierte Komponentenstile ergänzen. */
-/* TODO: Zustandsstile für Upload/Statusbereiche anlegen. */
+:root {
+  color-scheme: light dark;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #111;
+  color: #f4f4f4;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-decoration: none;
+  color: inherit;
+  background: #1d1d1d;
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.card img,
+.hero {
+  width: 100%;
+  border-radius: 6px;
+}
+
+.button,
+button {
+  border: 0;
+  padding: 0.45rem 0.7rem;
+  border-radius: 5px;
+  background: #1466ff;
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button.danger {
+  background: #aa2a2a;
+}
+
+.actions,
+.mark-form,
+.filter,
+.pagination {
+  margin: 1rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+input {
+  padding: 0.4rem;
+}
+
+.muted {
+  color: #bbb;
+}

@@ -1,67 +1,72 @@
 # Hochzeits-Fotobox
 
-Die **Hochzeits-Fotobox** ist ein lokales System zur Aufnahme, Bereitstellung und optionalen Ausgabe von Eventfotos für Hochzeiten und ähnliche Veranstaltungen. Der Fokus liegt auf einem einfachen Gästeerlebnis (QR-gestützter Zugriff), klaren Betreiberprozessen (Import, Galerie, Druck) und einem datenschutzsensiblen Betrieb im lokalen Umfeld.
+Die **Hochzeits-Fotobox** ist ein offline-first MVP in PHP 8.x ohne Frameworks und ohne externe Abhängigkeiten. Bilder werden lokal importiert, indexiert, in einer mobilen Galerie angezeigt, optional innerhalb eines Zeitfensters gedruckt und nach Retention automatisch gelöscht.
 
-## Features
-- Lokale Fotobox-Nutzung für Veranstaltungen
-- QR-Zugang zur Webgalerie für Gäste
-- Bild-Download über die Galerie
-- Übergabe von Bildern an eine Druckqueue
-- Modularer Datenfluss zwischen Aufnahme, Import und Ausgabe
+## MVP-Umfang
+### 2026-02-27 – MVP-Spezifikation + Hardware-Setup
+- HDMI Live-View wird separat am Monitor betrieben.
+- USB/Canon Tool dient ausschließlich der Bildübernahme in `watch_path`.
+- Gäste sehen standardmäßig nur die letzten 15 Minuten und können dort drucken.
+- Die komplette Galerie ist separat verfügbar, aber ohne Druckfunktion.
+- Markieren/Bestellen funktioniert ohne Login per Name + Session-Cookie.
 
-## Nutzerablauf (Gäste) in 4 Schritten
-1. Foto wird an der Fotobox aufgenommen.
-2. Gast öffnet die Galerie über den bereitgestellten QR-Code.
-3. Gast sieht freigegebene Bilder im gültigen Zeitfenster.
-4. Gast lädt Bilder herunter oder markiert sie für den Druck (falls aktiviert).
+### 2026-02-27 – Future/Optional
+- i2i/Anime bleibt ein optionaler Queue-Worker als Platzhalter in der Planung.
+- i2i/Anime ist im MVP **nicht** implementiert.
 
-## Preise und Buchung
-Preise, Pakete und Buchungslogik werden projektspezifisch gepflegt. Diese Informationen werden kurz und verständlich in diesem README ergänzt, sobald verbindliche Angebotsdaten vorliegen.
+## Architektur (MVP)
+- `import/import_service.php`: CLI für DB-Setup, Ingest und Cleanup.
+- `import/print_worker.php`: CLI für serielle Druckjobs über System-Spooler.
+- `web/mobile/*`: Gästeansichten + API-Endpunkte.
+- `web/gallery/index.php`: lokaler Admin/Monitor mit Passwort.
+- `shared/bootstrap.php`: Konfiguration, DB, Ratenlimit, Token-/Session-Helfer.
 
-## Datenschutz Kurzinfo
-- **Zweck:** Bereitstellung und optionaler Ausdruck von Eventfotos.
-- **Zugriff:** Gäste über QR-Link im vorgesehenen Zeitfenster; Betreiber mit administrativem Zugriff.
-- **Speicherort:** Primär lokal im Veranstaltungs- oder Betreiberumfeld.
-- **Löschung:** Nach definierter Retention-Frist und/oder auf Anforderung über dokumentierten Löschpfad.
+## Konfiguration
+Datei: `shared/config.php` (lokal erstellen, `shared/config.example.php` als Vorlage nutzen).
 
-## Setup Kurzinfo
-High-Level Setup: Kamera/Fotobox erzeugt Bilder, Importprozess übernimmt Dateien, Webkomponente stellt Galerie bereit, Druckkomponente verarbeitet Druckaufträge. Detaillierte Implementierungs- und Betriebsdetails werden ausschließlich in README.md und AGENTS.md ergänzt.
+Wichtige Schlüssel:
+- `base_url`, `base_url_mobile`
+- `watch_path`, `data_path`
+- `timezone` (Default: `Europe/Vienna`)
+- `retention_days`
+- `gallery_window_minutes` (Default: `15`)
+- `print_api_key`
+- `admin_password_hash_placeholder`
+- `rate_limit_max`, `rate_limit_window_seconds`
 
-## Struktur
-### 2026-02-27 – Segmentstruktur
-- `web/gallery`: Galerie-Websegment für die öffentliche Anzeige freigegebener Eventfotos.
-- `web/mobile`: Handy-Websegment für mobile Interaktion und spätere Upload-/Steuerflüsse.
-- `import`: Importdienst-Segment zur Übernahme neuer Fotos aus Aufnahmequellen.
-- `shared`: Gemeinsame Stubs für Konfiguration, Bootstrap und Utility-Schnittstellen.
-- `data`: Lokale Datenpfade für Originale, Thumbnails, Queue und Logs.
+## Betrieb
+### Initialisieren
+```bash
+php import/import_service.php init-db
+```
 
-## Dokumentationsrichtlinie
-### 2026-02-27 – Dokumentationsrichtlinie (verbindlich)
+### Neue Bilder importieren
+```bash
+php import/import_service.php ingest
+```
 
-1) **Doku-Orte**
-- Erlaubt: README.md, AGENTS.md
-- Verboten: Wiki, Kommentare als Ersatz, separate Doku-Dateien
-- Jede Doku-Änderung: datierter Eintrag (YYYY-MM-DD) im jeweiligen Abschnitt "Changelog"
+### Alte Daten bereinigen
+```bash
+php import/import_service.php cleanup
+```
 
-2) **Was in README.md stehen muss (Human-First)**
-- Zweck und Umfang (1 Absatz)
-- Features (Liste)
-- Nutzerablauf (Gäste) in 4 Schritten
-- Preise und Buchung (kurz)
-- Datenschutz Kurzinfo (Zweck, Zugriff, Speicherort, Löschung)
-- Setup Kurzinfo (nur High-Level, keine langen HowTos)
-- Changelog (datierte Stichpunkte)
+### Druckjobs verarbeiten
+```bash
+php import/print_worker.php run
+```
 
-3) **Was in AGENTS.md stehen muss (Agent-First)**
-- Rollen und Zuständigkeiten (GPT/Codex/Nutzer)
-- Projektstruktur (wichtige Ordner, Dateinamen, Pfade)
-- Kernmodule (Import, Index, Web, Print, Cleanup) mit Zuständigkeit je Modul
-- Kommandos (start, test, lint, build) als echte Befehle, sobald vorhanden
-- Boundaries: ALWAYS / ASK FIRST / NEVER
-- Security & Privacy Regeln für Code-Änderungen
-- Decision Log: datierte Architekturentscheidungen (ADR-light)
+## Datenfluss
+`watch_path` -> Import (`/data/originals`) -> Thumbnail (`/data/thumbs`) -> SQLite-Index (`/data/queue/photobox.sqlite`) -> Web-Ausgabe (Token-URLs) -> optional Druckqueue -> Cleanup nach Retention.
+
+## Sicherheit & Datenschutz (MVP)
+- Keine direkten Dateipfade nach außen; nur tokenbasierte URLs (`t=...`).
+- Druck nur im Zeitfenster (`gallery_window_minutes`) erlaubt.
+- `api_print.php` verlangt API-Key und hat IP-Ratenlimit über SQLite-`kv`.
+- Eingaben validiert: Token-Format, Uhrzeit (`HH:MM`), Namenslänge/Zeichensatz.
+- `all.php`: `noindex` + `no-store` Header.
+- Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
-- 2026-02-27 – Struktur: drei Segmente (gallery, mobile, import) sowie shared- und data-Ordner als Grundgerüst ergänzt.
-- 2026-02-27 – Verbindliche Dokumentationsrichtlinie ergänzt und README auf Human-First-Struktur ausgerichtet.
-- 2026-02-27 – Initiale Repo-Struktur und Basisdokumentation.
+- 2026-02-27 – MVP implementiert: Import, Thumb-Generierung, SQLite-Index, mobile Galerie mit Zeitfenster/Alle-Fotos, Session-Bestellungen, Druckqueue-API, Druckworker, Cleanup.
+- 2026-02-27 – Hardware-Setup und optionale Future-Themen (i2i/Anime nur Placeholder) dokumentiert.
+- 2026-02-27 – Security/Privacy Betriebsregeln für den MVP ergänzt.
