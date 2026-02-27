@@ -58,6 +58,7 @@ Wichtige Schlüssel:
 ### 2026-02-27 – Windows PHP-Diagnose und SQLite-Pflicht
 - `./start.ps1` prüft vor dem Serverstart zwingend `php -v`, `php --ini` und `php -m`.
 - Bei Parse-/INI-Fehlern (z. B. `Parse error`, `Command line code`) startet der PHP-Server **nicht**; Supervisor setzt Fehlerstatus statt Endlos-Restart.
+- Leere Zeilen in der PHP-Diagnoseausgabe werden beim Logging übersprungen, damit `Write-PhotoboxLog` keine leeren `Message`-Werte erhält und `start.ps1` nicht mit ParameterBinding-Fehler abbricht.
 - SQLite ist Pflicht für den MVP: `pdo_sqlite` muss in `php -m` vorhanden sein (`sqlite3` allein reicht nicht, da die App PDO nutzt).
 - Logs enthalten bei Fehlern immer die vollständige Diagnoseausgabe von `php --ini` und `php -m` in `data/logs/php.log`.
 - `./status.ps1` erzeugt fehlende `data/logs` automatisch und liefert dadurch auch ohne vorherigen `./start.ps1` robust OK/FAIL-Diagnosen.
@@ -109,6 +110,7 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-02-27 – Start-Fix: Leere Zeilen aus `php -v/--ini/-m`-Diagnose werden beim Schreiben in `php.log` ignoriert, damit `Write-PhotoboxLog` nicht mit leerer `Message` fehlschlägt.
 - 2026-02-27 – Galerie-Auth umgestellt: `/gallery/` öffentlich/read-only, optionales `/gallery/admin.php` mit `pb_admin`-Session, Default `admin_password_hash=CHANGE_ME` (Admin deaktiviert); Ops-Fixes: SQLite-Preflight verlangt `pdo_sqlite`, `status.ps1` funktioniert ohne vorherigen Start durch `data/logs`-Autocreate.
 - 2026-02-27 – Windows Run stabilisiert: PHP-Konfigurationsdiagnose (`php -v/--ini/-m`), SQLite-Pflichtprüfung, Crash-Backoff (5/10/20/40/60s), HALT nach 5 Crashes, Root-Redirect `web/index.php` ergänzt.
 - 2026-02-27 – Windows Ops ergänzt: `start.ps1` Supervisor/Watcher, `stop.ps1`, `status.ps1`, Firewall- und Gerätechecks, LAN-Offline-Betrieb.
