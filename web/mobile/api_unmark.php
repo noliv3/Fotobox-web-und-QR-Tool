@@ -4,32 +4,33 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../shared/bootstrap.php';
 
-require_post();
+noCacheHeaders();
+noIndexHeaders();
+requirePost();
 
-$token = $_POST['token'] ?? '';
-if (!is_string($token) || !validate_token($token)) {
-    respond_json(['error' => 'invalid_token'], 400);
+$pdo = pdo();
+$token = $_POST['t'] ?? '';
+if (!is_string($token) || !isValidToken($token)) {
+    responseJson(['error' => 'invalid_token'], 400);
 }
 
-$photo = find_photo_by_token($token);
-if (!$photo) {
-    respond_json(['error' => 'photo_not_found'], 404);
+$photo = findPhotoByToken($pdo, $token);
+if ($photo === null) {
+    responseJson(['error' => 'photo_not_found'], 404);
 }
 
-$sessionToken = require_session_token();
-$pdo = app_pdo();
-
-$orderStmt = $pdo->prepare('SELECT id FROM orders WHERE session_token = :session_token ORDER BY id DESC LIMIT 1');
-$orderStmt->execute(['session_token' => $sessionToken]);
-$orderId = (int) ($orderStmt->fetchColumn() ?: 0);
-
-if ($orderId > 0) {
-    $del = $pdo->prepare('DELETE FROM order_items WHERE order_id = :order_id AND photo_id = :photo_id');
-    $del->execute(['order_id' => $orderId, 'photo_id' => $photo['id']]);
-
-    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM order_items WHERE order_id = :order_id');
-    $countStmt->execute(['order_id' => $orderId]);
-    respond_json(['itemsCount' => (int) $countStmt->fetchColumn()]);
+$sessionToken = getOrCreateSessionToken();
+$order = getOpenOrder($pdo, $sessionToken, false);
+if ($order === null) {
+    responseJson(['itemsCount' => 0]);
 }
 
-respond_json(['itemsCount' => 0]);
+$pdo->prepare('DELETE FROM order_items WHERE order_id = :orderId AND photo_id = :photoId')->execute([
+    ':orderId' => $order['id'],
+    ':photoId' => $photo['id'],
+]);
+
+$countStmt = $pdo->prepare('SELECT COUNT(*) FROM order_items WHERE order_id = :orderId');
+$countStmt->execute([':orderId' => $order['id']]);
+
+responseJson(['itemsCount' => (int) $countStmt->fetchColumn()]);

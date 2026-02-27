@@ -4,37 +4,42 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../shared/bootstrap.php';
 
-require_post();
+noCacheHeaders();
+noIndexHeaders();
+requirePost();
 
-if (!apply_rate_limit('print')) {
-    respond_json(['error' => 'rate_limited'], 429);
-}
-
-$cfg = app_config();
-$apiKey = $_SERVER['HTTP_X_API_KEY'] ?? ($_POST['api_key'] ?? '');
+$pdo = pdo();
+$cfg = config();
+$apiKey = $_SERVER['HTTP_X_API_KEY'] ?? ($_POST['print_api_key'] ?? '');
 if (!is_string($apiKey) || !hash_equals((string) $cfg['print_api_key'], $apiKey)) {
-    respond_json(['error' => 'forbidden'], 403);
+    responseJson(['error' => 'forbidden'], 403);
 }
 
-$token = $_POST['token'] ?? '';
-if (!is_string($token) || !validate_token($token)) {
-    respond_json(['error' => 'invalid_token'], 400);
+$rateKey = 'rl_print_' . getClientIp();
+if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['rate_limit_window_seconds'])) {
+    responseJson(['error' => 'rate_limited'], 429);
 }
 
-$photo = find_photo_by_token($token);
-if (!$photo) {
-    respond_json(['error' => 'photo_not_found'], 404);
+$token = $_POST['t'] ?? '';
+if (!is_string($token) || !isValidToken($token)) {
+    responseJson(['error' => 'invalid_token'], 400);
 }
 
-if (!is_photo_printable($photo)) {
-    respond_json(['error' => 'outside_print_window'], 403);
+$photo = findPhotoByToken($pdo, $token);
+if ($photo === null) {
+    responseJson(['error' => 'photo_not_found'], 404);
 }
 
-$stmt = app_pdo()->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error) VALUES(:photo_id, :created_ts, :status, NULL)');
+if (nowTs() - (int) $photo['ts'] > ((int) $cfg['gallery_window_minutes'] * 60)) {
+    responseJson(['error' => 'outside_print_window'], 403);
+}
+
+$stmt = $pdo->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error) VALUES(:photoId, :createdTs, :status, :error)');
 $stmt->execute([
-    'photo_id' => $photo['id'],
-    'created_ts' => time(),
-    'status' => 'pending',
+    ':photoId' => $photo['id'],
+    ':createdTs' => nowTs(),
+    ':status' => 'pending',
+    ':error' => null,
 ]);
 
-respond_json(['jobId' => (int) app_pdo()->lastInsertId()]);
+responseJson(['jobId' => (int) $pdo->lastInsertId()]);
