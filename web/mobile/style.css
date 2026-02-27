@@ -1,73 +1,86 @@
-:root {
-  color-scheme: light dark;
-  font-family: Arial, sans-serif;
-}
-
+* { box-sizing: border-box; }
 body {
   margin: 0;
-  background: #111;
-  color: #f4f4f4;
+  font-family: Arial, sans-serif;
+  background: #f3f5f8;
+  color: #1d2733;
 }
-
 .container {
-  max-width: 960px;
+  width: min(1100px, 100%);
   margin: 0 auto;
   padding: 1rem;
 }
-
+.nav-links {
+  display: flex;
+  gap: .8rem;
+  flex-wrap: wrap;
+}
+.nav-links a { color: #0f4fa8; text-decoration: none; }
+.panel {
+  background: #ffffff;
+  border: 1px solid #d8deea;
+  border-radius: 10px;
+  padding: .8rem;
+  margin-bottom: .9rem;
+}
+.form-row,
+.form-stack {
+  display: grid;
+  gap: .6rem;
+}
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: .7rem;
 }
-
 .card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+  background: #fff;
+  border: 1px solid #d9dfeb;
+  border-radius: 10px;
   text-decoration: none;
   color: inherit;
-  background: #1d1d1d;
-  border-radius: 8px;
-  padding: 0.5rem;
+  padding: .4rem;
+  display: grid;
+  gap: .3rem;
 }
-
 .card img,
 .hero {
   width: 100%;
-  border-radius: 6px;
+  border-radius: 8px;
+  display: block;
+  object-fit: cover;
 }
-
-.button,
-button {
+.hero {
+  max-height: 80vh;
+  background: #000;
+}
+.actions {
+  display: flex;
+  gap: .6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+button,
+.button {
   border: 0;
-  padding: 0.45rem 0.7rem;
-  border-radius: 5px;
-  background: #1466ff;
+  border-radius: 8px;
+  background: #0f4fa8;
   color: #fff;
+  padding: .55rem .75rem;
   text-decoration: none;
   cursor: pointer;
 }
-
-button.danger {
-  background: #aa2a2a;
+button[disabled] { opacity: .45; cursor: not-allowed; }
+input {
+  width: 100%;
+  border: 1px solid #b9c4d7;
+  border-radius: 8px;
+  padding: .55rem;
 }
-
-.actions,
-.mark-form,
-.filter,
 .pagination {
-  margin: 1rem 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  justify-content: space-between;
   align-items: center;
 }
-
-input {
-  padding: 0.4rem;
-}
-
-.muted {
-  color: #bbb;
-}
+.inline-form { margin: 0; }
+.muted { color: #5f6c7e; }

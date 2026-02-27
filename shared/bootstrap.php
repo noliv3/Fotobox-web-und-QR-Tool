@@ -4,184 +4,172 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/utils.php';
 
-const APP_ROOT = __DIR__ . '/..';
+const ROOT = __DIR__ . '/..';
 
-function app_config(): array
+function config(): array
 {
-    static $config = null;
-    if ($config !== null) {
-        return $config;
+    static $cfg = null;
+    if (is_array($cfg)) {
+        return $cfg;
     }
 
-    $configFile = __DIR__ . '/config.php';
-    if (!is_file($configFile)) {
-        $configFile = __DIR__ . '/config.example.php';
+    $cfg = require __DIR__ . '/config.example.php';
+    $localFile = __DIR__ . '/config.php';
+    if (is_file($localFile)) {
+        $local = require $localFile;
+        if (is_array($local)) {
+            $cfg = array_merge($cfg, $local);
+        }
     }
 
-    $config = require $configFile;
-    date_default_timezone_set((string) ($config['timezone'] ?? 'Europe/Vienna'));
-    return $config;
+    date_default_timezone_set((string) ($cfg['timezone'] ?? 'Europe/Vienna'));
+
+    return $cfg;
 }
 
-function app_paths(): array
+function ensureDir(string $path): void
 {
-    static $paths = null;
-    if ($paths !== null) {
-        return $paths;
+    if (!is_dir($path) && !mkdir($path, 0775, true) && !is_dir($path)) {
+        throw new RuntimeException('dir_create_failed: ' . $path);
     }
-
-    $cfg = app_config();
-    $dataPath = realpath($cfg['data_path']) ?: $cfg['data_path'];
-
-    $paths = [
-        'data' => $dataPath,
-        'watch' => $cfg['watch_path'],
-        'originals' => $dataPath . '/originals',
-        'thumbs' => $dataPath . '/thumbs',
-        'queue' => $dataPath . '/queue',
-        'logs' => $dataPath . '/logs',
-        'db' => $dataPath . '/queue/photobox.sqlite',
-    ];
-
-    foreach (['data', 'watch', 'originals', 'thumbs', 'queue', 'logs'] as $name) {
-        ensure_dir($paths[$name]);
-    }
-
-    return $paths;
 }
 
-function app_pdo(): PDO
+function pathData(): string
+{
+    return (string) config()['data_path'];
+}
+
+function pathOriginals(): string
+{
+    return pathData() . '/originals';
+}
+
+function pathThumbs(): string
+{
+    return pathData() . '/thumbs';
+}
+
+function pathQueue(): string
+{
+    return pathData() . '/queue';
+}
+
+function pathLogs(): string
+{
+    return pathData() . '/logs';
+}
+
+function dbPath(): string
+{
+    return pathQueue() . '/photobox.sqlite';
+}
+
+function ensureAppDirs(): void
+{
+    ensureDir(pathData());
+    ensureDir((string) config()['watch_path']);
+    ensureDir(pathOriginals());
+    ensureDir(pathThumbs());
+    ensureDir(pathQueue());
+    ensureDir(pathLogs());
+}
+
+function pdo(): PDO
 {
     static $pdo = null;
     if ($pdo instanceof PDO) {
         return $pdo;
     }
 
-    $paths = app_paths();
-    $isNew = !is_file($paths['db']);
-    $pdo = new PDO('sqlite:' . $paths['db']);
+    ensureAppDirs();
+    $pdo = new PDO('sqlite:' . dbPath());
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-    if ($isNew) {
-        initialize_database($pdo);
-    }
+    initDb($pdo);
 
     return $pdo;
 }
 
-function initialize_database(?PDO $pdo = null): void
+function initDb(PDO $pdo): void
 {
-    $pdo ??= app_pdo();
-
-    $sql = [
-        'CREATE TABLE IF NOT EXISTS photos (
-            id TEXT PRIMARY KEY,
-            ts INTEGER,
-            filename TEXT,
-            token TEXT UNIQUE,
-            thumb_filename TEXT,
-            deleted INTEGER DEFAULT 0
-        )',
-        'CREATE TABLE IF NOT EXISTS print_jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            photo_id TEXT,
-            created_ts INTEGER,
-            status TEXT,
-            error TEXT NULL
-        )',
-        'CREATE TABLE IF NOT EXISTS kv (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )',
-        'CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_ts INTEGER,
-            guest_name TEXT,
-            session_token TEXT,
-            status TEXT,
-            note TEXT
-        )',
-        'CREATE TABLE IF NOT EXISTS order_items (
-            order_id INTEGER,
-            photo_id TEXT,
-            PRIMARY KEY(order_id, photo_id)
-        )',
-        'CREATE INDEX IF NOT EXISTS idx_photos_ts ON photos(ts)',
-        'CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status)',
-        'CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(session_token)',
+    $schema = [
+        'CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, ts INTEGER, filename TEXT, token TEXT UNIQUE, thumb_filename TEXT, deleted INTEGER DEFAULT 0)',
+        'CREATE TABLE IF NOT EXISTS print_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, photo_id TEXT, created_ts INTEGER, status TEXT, error TEXT NULL)',
+        'CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)',
+        'CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, created_ts INTEGER, guest_name TEXT, session_token TEXT, status TEXT, note TEXT)',
+        'CREATE TABLE IF NOT EXISTS order_items (order_id INTEGER, photo_id TEXT, PRIMARY KEY(order_id, photo_id))',
+        'CREATE INDEX IF NOT EXISTS photos_ts ON photos(ts)',
+        'CREATE INDEX IF NOT EXISTS photos_token ON photos(token)',
+        'CREATE INDEX IF NOT EXISTS print_jobs_status ON print_jobs(status)',
+        'CREATE INDEX IF NOT EXISTS orders_session ON orders(session_token)',
     ];
 
-    foreach ($sql as $statement) {
-        $pdo->exec($statement);
+    foreach ($schema as $sql) {
+        $pdo->exec($sql);
     }
 }
 
-function require_session_token(): string
+function responseJson(array $payload, int $status = 200): void
 {
-    $cookie = $_COOKIE['pb_session'] ?? '';
-    if (is_string($cookie) && validate_token($cookie)) {
-        return $cookie;
-    }
-
-    $token = random_token(32);
-    setcookie('pb_session', $token, [
-        'expires' => time() + 86400 * 30,
-        'path' => '/',
-        'secure' => false,
-        'httponly' => true,
-        'samesite' => 'Lax',
-    ]);
-    $_COOKIE['pb_session'] = $token;
-    return $token;
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
 }
 
-function find_photo_by_token(string $token): ?array
+function noCacheHeaders(): void
 {
-    $stmt = app_pdo()->prepare('SELECT * FROM photos WHERE token = :token AND deleted = 0 LIMIT 1');
-    $stmt->execute(['token' => $token]);
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+}
+
+function noIndexHeaders(): void
+{
+    header('X-Robots-Tag: noindex, nofollow, noarchive');
+}
+
+function isValidToken(string $token): bool
+{
+    return (bool) preg_match('/^[a-f0-9]{24,128}$/', $token);
+}
+
+function findPhotoByToken(PDO $pdo, string $token): ?array
+{
+    $stmt = $pdo->prepare('SELECT * FROM photos WHERE token = :token AND deleted = 0 LIMIT 1');
+    $stmt->execute([':token' => $token]);
     $row = $stmt->fetch();
-    return $row ?: null;
+
+    return is_array($row) ? $row : null;
 }
 
-function is_photo_printable(array $photo): bool
+function getOpenOrder(PDO $pdo, string $sessionToken, bool $create = true): ?array
 {
-    $windowMinutes = (int) app_config()['gallery_window_minutes'];
-    return ((int) $photo['ts']) >= (time() - $windowMinutes * 60);
-}
-
-function apply_rate_limit(string $scope): bool
-{
-    $cfg = app_config();
-    $max = (int) $cfg['rate_limit_max'];
-    $window = (int) $cfg['rate_limit_window_seconds'];
-    $now = time();
-
-    $key = sprintf('rate:%s:%s', $scope, client_ip());
-    $stmt = app_pdo()->prepare('SELECT value FROM kv WHERE key = :key');
-    $stmt->execute(['key' => $key]);
-    $existing = $stmt->fetchColumn();
-
-    $timestamps = [];
-    if (is_string($existing) && $existing !== '') {
-        $decoded = json_decode($existing, true);
-        if (is_array($decoded)) {
-            $timestamps = array_filter($decoded, static fn ($ts) => is_int($ts) || ctype_digit((string) $ts));
-            $timestamps = array_map('intval', $timestamps);
-        }
+    $stmt = $pdo->prepare('SELECT * FROM orders WHERE session_token = :session AND status = :status ORDER BY id DESC LIMIT 1');
+    $stmt->execute([':session' => $sessionToken, ':status' => 'open']);
+    $row = $stmt->fetch();
+    if (is_array($row)) {
+        return $row;
     }
 
-    $timestamps = array_values(array_filter($timestamps, static fn (int $ts) => $ts >= ($now - $window)));
-    if (count($timestamps) >= $max) {
-        return false;
+    if (!$create) {
+        return null;
     }
 
-    $timestamps[] = $now;
-    $upsert = app_pdo()->prepare('INSERT INTO kv(key, value) VALUES(:key,:value) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-    $upsert->execute([
-        'key' => $key,
-        'value' => json_encode($timestamps),
+    $insert = $pdo->prepare('INSERT INTO orders(created_ts, guest_name, session_token, status, note) VALUES(:ts, :guest, :session, :status, :note)');
+    $insert->execute([
+        ':ts' => nowTs(),
+        ':guest' => '',
+        ':session' => $sessionToken,
+        ':status' => 'open',
+        ':note' => '',
     ]);
 
-    return true;
+    $id = (int) $pdo->lastInsertId();
+    $stmt = $pdo->prepare('SELECT * FROM orders WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => $id]);
+    $created = $stmt->fetch();
+
+    return is_array($created) ? $created : null;
 }

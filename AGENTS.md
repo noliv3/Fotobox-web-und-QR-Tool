@@ -60,7 +60,7 @@
 ### 2026-02-27 – Mobile API Dokumentation
 - Endpoint: `/web/mobile/api_print.php`
   - Zweck: Druckjob anlegen
-  - Request: `POST token`, Auth über Header `X-API-Key` oder Feld `api_key`
+  - Request: `POST t`, Auth über Header `X-API-Key` oder Feld `print_api_key`
   - Response: `{jobId:int}`
   - Fehlerfälle: `400 invalid_token`, `403 forbidden|outside_print_window`, `429 rate_limited`, `404 photo_not_found`
   - Security: API-Key + IP-Rate-Limit + Zeitfensterprüfung
@@ -78,7 +78,7 @@
 
 - Endpoint: `/web/mobile/api_mark.php`
   - Zweck: Foto in Session-Bestellung aufnehmen
-  - Request: `POST token`, optional `guest_name`
+  - Request: `POST t`, optional `guest_name`
   - Response: `{orderId:int,itemsCount:int}`
   - Fehlerfälle: `400 invalid_token`, `404 photo_not_found`
   - Security: Token-Validierung, Name-Sanitizing, session-basierte Zuordnung
@@ -87,7 +87,7 @@
 
 - Endpoint: `/web/mobile/api_unmark.php`
   - Zweck: Foto aus Session-Bestellung entfernen
-  - Request: `POST token`
+  - Request: `POST t`
   - Response: `{itemsCount:int}`
   - Fehlerfälle: `400 invalid_token`, `404 photo_not_found`
   - Security: session-basierte Löschung, Token-Validierung
@@ -103,6 +103,21 @@
   - Privacy: nur minimaler Namensstring
   - Status/ToDo: stabiler MVP-Umfang
 
+### 2026-02-27 – Zusätzliche Web-Endpunkte
+- Endpoint: `/web/mobile/image.php`
+  - Zweck: JPEG-Ausgabe für `thumb|original` per Token
+  - Request: `GET t`, `GET type`
+  - Response: `image/jpeg`
+  - Fehlerfälle: `400 invalid_token|invalid_type`, `404 not_found`
+  - Security: niemals Dateipfade aus Query verwenden
+
+- Endpoint: `/web/mobile/download.php`
+  - Zweck: Originalbild als Attachment herunterladen
+  - Request: `GET t`
+  - Response: `image/jpeg` mit `Content-Disposition: attachment`
+  - Fehlerfälle: `400 invalid_token`, `404 not_found`
+  - Security: Token-Auflösung ausschließlich über DB
+
 ## Security & Privacy Regeln für Code-Änderungen
 ### 2026-02-27 – Verbindliche MVP-Regeln
 - Token-URLs für Medienzugriff, keine direkten Dateipfade nach außen
@@ -112,6 +127,11 @@
 - `all.php` mit `noindex` und `no-store`
 - Retention-Löschung physisch + DB-Markierung (`deleted=1`)
 - Keine Secrets im Code hardcoden; produktive Werte in lokaler `shared/config.php`
+
+### 2026-02-27 – Offline-first Regeln
+- Keine externen Requests, keine CDN-Assets, keine Remote-Skripte
+- QR-Ziel zeigt immer auf lokale URL (`hostname` oder `LAN-IP`)
+- Kein Online-Time-Sync im Code; nur lokale Systemzeit verwenden
 
 ## Boundaries
 ### ALWAYS
@@ -143,6 +163,8 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-02-27 – Web-Endpunkte und API-Verhalten (Parameter, Responses, Errors) konkretisiert.
+- 2026-02-27 – Offline-first Regeln als verbindlicher Web-Standard ergänzt.
 - 2026-02-27 – Module, Kommandos, DB-Schema und API-Endpunkte für MVP ergänzt.
 - 2026-02-27 – Security/Privacy Regeln konkretisiert (Token, Zeitfenster-Druck, Retention, Rate-Limit).
 - 2026-02-27 – Projektstruktur aktualisiert: Segmentpfade und Verantwortlichkeiten ergänzt; Hinweis zu `data/` und `.gitkeep` ergänzt.

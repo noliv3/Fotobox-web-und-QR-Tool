@@ -19,7 +19,16 @@ Die **Hochzeits-Fotobox** ist ein offline-first MVP in PHP 8.x ohne Frameworks u
 - `import/print_worker.php`: CLI für serielle Druckjobs über System-Spooler.
 - `web/mobile/*`: Gästeansichten + API-Endpunkte.
 - `web/gallery/index.php`: lokaler Admin/Monitor mit Passwort.
-- `shared/bootstrap.php`: Konfiguration, DB, Ratenlimit, Token-/Session-Helfer.
+- `shared/bootstrap.php`: Konfiguration, DB-Autoinit, Header- und Order-Helfer.
+- `shared/utils.php`: Zeit-, Validierungs-, Session- und Rate-Limit-Utilities.
+
+## Offline-Setup (LAN ohne Internet)
+### 2026-02-27 – Offline-first Betrieb
+- Router SSID: `FOTOBOX_SSID_PLACEHOLDER`
+- Router Passwort: `FOTOBOX_PASSWORT_PLACEHOLDER`
+- Lokale QR-Ziel-URL: `http://photobox/` oder alternativ `http://192.168.8.2/`
+- Keine externen Ressourcen verwenden (keine CDN-Assets, keine externen APIs, keine Analytics).
+- Systemzeit des Mini-PC lokal korrekt halten; der Code nutzt keine Online-Zeitquelle.
 
 ## Konfiguration
 Datei: `shared/config.php` (lokal erstellen, `shared/config.example.php` als Vorlage nutzen).
@@ -67,6 +76,8 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-02-27 – Web-Ebene implementiert: Mobile Galerie, Alle-Fotos-Ansicht, Bestellung, Print-Job-API, Admin-Statusseite.
+- 2026-02-27 – Offline-first Setup ergänzt: Router-/QR-URL-Hinweise, keine externen Assets/Requests.
 - 2026-02-27 – MVP implementiert: Import, Thumb-Generierung, SQLite-Index, mobile Galerie mit Zeitfenster/Alle-Fotos, Session-Bestellungen, Druckqueue-API, Druckworker, Cleanup.
 - 2026-02-27 – Hardware-Setup und optionale Future-Themen (i2i/Anime nur Placeholder) dokumentiert.
 - 2026-02-27 – Security/Privacy Betriebsregeln für den MVP ergänzt.

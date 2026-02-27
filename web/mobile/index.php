@@ -4,34 +4,33 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../shared/bootstrap.php';
 
-$pdo = app_pdo();
-$cfg = app_config();
-$windowMinutes = (int) $cfg['gallery_window_minutes'];
-$timeFilter = $_GET['time'] ?? '';
-$params = [];
-$where = 'deleted = 0';
+noCacheHeaders();
+noIndexHeaders();
 
-if (is_string($timeFilter) && $timeFilter !== '') {
-    if (!validate_hhmm($timeFilter)) {
+$pdo = pdo();
+$cfg = config();
+$windowMinutes = (int) $cfg['gallery_window_minutes'];
+$tokenTime = $_GET['time'] ?? '';
+$where = 'deleted = 0';
+$params = [];
+
+if (is_string($tokenTime) && $tokenTime !== '') {
+    if (!validateTimeHHMM($tokenTime)) {
         http_response_code(400);
-        echo 'Ungültiges Zeitformat. Bitte HH:MM verwenden.';
+        echo 'Ungültiges Zeitformat (HH:MM erwartet).';
         exit;
     }
 
-    [$h, $m] = array_map('intval', explode(':', $timeFilter));
-    $dayStart = strtotime(date('Y-m-d 00:00:00'));
-    $target = $dayStart + ($h * 3600) + ($m * 60);
-    $range = 15 * 60;
+    $targetTs = parseTimeToTsToday($tokenTime, (string) $cfg['timezone']);
     $where .= ' AND ts BETWEEN :fromTs AND :toTs';
-    $params['fromTs'] = $target - $range;
-    $params['toTs'] = $target + $range;
+    $params[':fromTs'] = $targetTs - 600;
+    $params[':toTs'] = $targetTs + 600;
 } else {
     $where .= ' AND ts >= :minTs';
-    $params['minTs'] = time() - ($windowMinutes * 60);
+    $params[':minTs'] = nowTs() - ($windowMinutes * 60);
 }
 
-$sql = "SELECT id, ts, token FROM photos WHERE {$where} ORDER BY ts DESC LIMIT 200";
-$stmt = $pdo->prepare($sql);
+$stmt = $pdo->prepare("SELECT token, ts FROM photos WHERE {$where} ORDER BY ts DESC LIMIT 240");
 $stmt->execute($params);
 $photos = $stmt->fetchAll();
 ?>
@@ -40,25 +39,25 @@ $photos = $stmt->fetchAll();
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fotobox – Letzte Fotos</title>
+    <title>Mobile Galerie</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main class="container">
-    <h1>Letzte <?= htmlspecialchars((string) $windowMinutes, ENT_QUOTES, 'UTF-8') ?> Minuten</h1>
-    <p><a href="all.php">Alle Fotos</a> · <a href="order.php">Meine Bestellung</a></p>
+    <h1>Galerie</h1>
+    <p class="nav-links"><a href="all.php">Alle Fotos</a> <a href="order.php">Meine Bestellung</a></p>
 
-    <form method="get" class="filter">
-        <label for="time">Filter nach Uhrzeit (HH:MM):</label>
-        <input type="time" id="time" name="time" value="<?= htmlspecialchars((string) $timeFilter, ENT_QUOTES, 'UTF-8') ?>">
-        <button type="submit">Filtern</button>
+    <form method="get" class="panel form-row">
+        <label for="time">Uhrzeit (HH:MM)</label>
+        <input type="time" id="time" name="time" value="<?= htmlspecialchars((string) $tokenTime, ENT_QUOTES, 'UTF-8') ?>">
+        <button type="submit">Anzeigen</button>
     </form>
 
     <section class="grid">
         <?php foreach ($photos as $photo): ?>
-            <a class="card" href="photo.php?t=<?= urlencode($photo['token']) ?>">
-                <img src="media.php?type=thumb&t=<?= urlencode($photo['token']) ?>" alt="Foto">
-                <small><?= date('H:i', (int) $photo['ts']) ?></small>
+            <a class="card" href="photo.php?t=<?= urlencode((string) $photo['token']) ?>">
+                <img src="image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto-Thumbnail" loading="lazy">
+                <span><?= date('H:i', (int) $photo['ts']) ?></span>
             </a>
         <?php endforeach; ?>
     </section>

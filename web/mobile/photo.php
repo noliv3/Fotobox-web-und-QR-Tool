@@ -4,54 +4,58 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../shared/bootstrap.php';
 
+noCacheHeaders();
+noIndexHeaders();
+
+$pdo = pdo();
 $token = $_GET['t'] ?? '';
-if (!is_string($token) || !validate_token($token)) {
+if (!is_string($token) || !isValidToken($token)) {
     http_response_code(400);
-    echo 'Ungültiger Token.';
+    echo 'invalid_token';
     exit;
 }
 
-$photo = find_photo_by_token($token);
-if (!$photo) {
+$photo = findPhotoByToken($pdo, $token);
+if ($photo === null) {
     http_response_code(404);
-    echo 'Foto nicht gefunden.';
+    echo 'photo_not_found';
     exit;
 }
 
-$printable = is_photo_printable($photo);
+$printable = nowTs() - (int) $photo['ts'] <= ((int) config()['gallery_window_minutes'] * 60);
 ?>
 <!doctype html>
 <html lang="de">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fotobox – Foto</title>
+    <title>Foto</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main class="container detail">
-    <p><a href="index.php">← Zurück</a> · <a href="order.php">Meine Bestellung</a></p>
-    <img class="hero" src="media.php?type=photo&t=<?= urlencode($token) ?>" alt="Detailfoto">
+<main class="container">
+    <p class="nav-links"><a href="index.php">Zur Galerie</a> <a href="order.php">Meine Bestellung</a></p>
+    <img class="hero" src="image.php?t=<?= urlencode($token) ?>&amp;type=original" alt="Foto">
 
-    <div class="actions">
-        <a class="button" href="media.php?type=download&t=<?= urlencode($token) ?>">Download</a>
-
+    <div class="panel actions">
+        <a class="button" href="download.php?t=<?= urlencode($token) ?>">Download</a>
         <?php if ($printable): ?>
-            <button class="button" data-print-token="<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>">Drucken</button>
+            <form method="post" action="api_print.php" class="inline-form">
+                <input type="hidden" name="t" value="<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="print_api_key" value="<?= htmlspecialchars((string) config()['print_api_key'], ENT_QUOTES, 'UTF-8') ?>">
+                <button type="submit">Drucken</button>
+            </form>
         <?php else: ?>
-            <span class="muted">Drucken nur im Zeitfenster möglich.</span>
+            <span class="muted">Druck nur im Zeitfenster möglich.</span>
         <?php endif; ?>
     </div>
 
-    <form id="markForm" class="mark-form">
-        <input type="hidden" name="token" value="<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>">
-        <label for="guest_name">Name für Merkliste:</label>
-        <input id="guest_name" name="guest_name" maxlength="80" placeholder="Vorname / Tisch">
-        <button class="button" type="submit">Merken</button>
+    <form method="post" action="api_mark.php" class="panel form-stack">
+        <input type="hidden" name="t" value="<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>">
+        <label for="guest_name">Name für Bestellung (optional)</label>
+        <input id="guest_name" name="guest_name" maxlength="80" autocomplete="name">
+        <button type="submit">Zur Bestellung hinzufügen</button>
     </form>
-
-    <p id="apiMessage" class="muted"></p>
 </main>
-<script src="app.js"></script>
 </body>
 </html>
