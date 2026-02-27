@@ -172,6 +172,10 @@ function Test-PhpConfig {
             Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message 'Keine Ausgabe.'
         } else {
             foreach ($line in ($result.Output -split "`r?`n")) {
+                if ([string]::IsNullOrWhiteSpace($line)) {
+                    continue
+                }
+
                 Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message $line
             }
         }
