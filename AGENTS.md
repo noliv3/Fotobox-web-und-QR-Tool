@@ -22,8 +22,8 @@
 ## Kernmodule
 ### 2026-02-27 – Module
 - **Import**
-  - Zuständigkeit: Scan von `watch_path`, JPEG-Übernahme, Thumbnail-Erzeugung, Indexeintrag
-  - Inputs/Outputs: `watch_path` -> `data/originals`, `data/thumbs`, Tabelle `photos`
+  - Zuständigkeit: Scan von `watch_path` oder rekursivem `sd_card_path` (je nach `import_mode`), JPEG-Übernahme, Thumbnail-Erzeugung, Indexeintrag
+  - Inputs/Outputs: `watch_path|sd_card_path` -> `data/originals`, `data/thumbs`, Tabelle `photos`
 - **Index**
   - Zuständigkeit: SQLite-gestützte Auffindbarkeit per Token/Zeitraum/Pagination
   - Inputs/Outputs: Tabelle `photos`, Token-Auflösung für Media-Endpunkte
@@ -36,6 +36,12 @@
 - **Cleanup**
   - Zuständigkeit: Retention-Löschung (Dateisystem + DB-Flag)
   - Inputs/Outputs: Entfernte Dateien, `photos.deleted=1`
+
+
+## Konfigurationsschlüssel
+### 2026-02-27 – Import-Modi
+- `import_mode`: `watch_folder` (Default) oder `sd_card`
+- `sd_card_path`: Pfad zur SD-Karte (z. B. `F:\DCIM`), wird bei `import_mode=sd_card` rekursiv überwacht
 
 ## Kommandos
 ### 2026-02-27 – Verfügbare Befehle
@@ -193,6 +199,7 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-02-27 – Start/Ops+Import erweitert: PHP-Preflight mit `php -v` und Fallback-Plan `-n`, fail-fast ohne Restart-Loop wenn `pdo_sqlite` fehlt, Watcher-Health ohne Subscription-State (Inaktivität nur WARN), neuer Importmodus `watch_folder|sd_card` mit rekursiver SD-Karten-Überwachung.
 - 2026-02-27 – Ops-Log-Sync gehärtet: lock-tolerantes Lesen von `php.stdout.current.log`/`php.stderr.current.log` via `FileShare.ReadWrite`, Retry-Backoff (100/300/800 ms), danach `WARN` + Continue; Zugriff serialisiert per Mutex, `start.ps1` fängt Sync-Fehler defensiv ab.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus der PHP-Diagnoseausgabe (`php -v/--ini/-m`) werden beim Schreiben nach `php.log` übersprungen, damit `Write-PhotoboxLog` keinen leeren `Message`-Parameter erhält.
 - 2026-02-27 – Galerie-Auth geändert: `/gallery/` öffentlich (read-only), `/gallery/admin.php` optional passwortgeschützt und nur aktiv mit gesetztem `admin_password_hash` (nicht `CHANGE_ME`). Zusätzlich Ops-Fixes: SQLite-Preflight akzeptiert nur `pdo_sqlite`, `status.ps1` erstellt `data/logs` selbst.

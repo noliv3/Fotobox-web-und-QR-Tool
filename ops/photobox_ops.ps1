@@ -144,11 +144,64 @@ function Invoke-PhpCommand {
     }
 }
 
-function Test-PhpConfig {
+function Get-PhpLaunchPlan {
     param(
         [Parameter(Mandatory = $true)][string]$PhpExe,
         [Parameter(Mandatory = $true)][string]$PhpLog,
         [Parameter(Mandatory = $true)][string]$SupervisorLog
+    )
+
+    $normalVersion = Invoke-PhpCommand -PhpExe $PhpExe -Arguments @('-v')
+    Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message "php -v ExitCode=$($normalVersion.ExitCode)"
+    if ([string]::IsNullOrWhiteSpace($normalVersion.Output)) {
+        Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message 'Keine Ausgabe für php -v.'
+    } else {
+        foreach ($line in ($normalVersion.Output -split "`r?`n")) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message $line
+            }
+        }
+    }
+
+    $normalFail = ($normalVersion.ExitCode -ne 0) -or ($normalVersion.Output -match 'Parse error')
+    $phpArgs = @()
+    $diagnosticArgs = @()
+    $mode = 'normal'
+
+    if ($normalFail) {
+        $mode = 'no_ini'
+        $phpArgs = @('-n')
+        $diagnosticArgs = @('-n')
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'WARN' -Message 'php.ini kaputt, starte mit -n (ohne ini).'
+
+        $fallbackVersion = Invoke-PhpCommand -PhpExe $PhpExe -Arguments @('-n', '-v')
+        Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message "php -n -v ExitCode=$($fallbackVersion.ExitCode)"
+        if ([string]::IsNullOrWhiteSpace($fallbackVersion.Output)) {
+            Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message 'Keine Ausgabe für php -n -v.'
+        } else {
+            foreach ($line in ($fallbackVersion.Output -split "`r?`n")) {
+                if (-not [string]::IsNullOrWhiteSpace($line)) {
+                    Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message $line
+                }
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        Mode = $mode
+        NormalVersion = $normalVersion
+        DiagnosticPrefixArgs = $diagnosticArgs
+        PhpPrefixArgs = $phpArgs
+        FallbackReason = if ($normalFail) { 'normal_php_v_failed_or_parse_error' } else { '' }
+    }
+}
+
+function Test-PhpConfig {
+    param(
+        [Parameter(Mandatory = $true)][string]$PhpExe,
+        [Parameter(Mandatory = $true)][string]$PhpLog,
+        [Parameter(Mandatory = $true)][string]$SupervisorLog,
+        [string[]]$PrefixArgs = @()
     )
 
     $commands = @(
@@ -159,11 +212,13 @@ function Test-PhpConfig {
 
     $results = @{}
     $configOk = $true
+    $prefixText = if ($PrefixArgs.Count -gt 0) { "$($PrefixArgs -join ' ') " } else { '' }
 
     Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message "PHP Diagnostik gestartet für: $PhpExe"
 
     foreach ($commandArgs in $commands) {
-        $result = Invoke-PhpCommand -PhpExe $PhpExe -Arguments $commandArgs
+        $fullArgs = @() + $PrefixArgs + $commandArgs
+        $result = Invoke-PhpCommand -PhpExe $PhpExe -Arguments $fullArgs
         $key = $commandArgs[0]
         $results[$key] = $result
 
@@ -188,7 +243,7 @@ function Test-PhpConfig {
 
     if (-not $configOk) {
         $help = @(
-            'PHP Konfiguration FEHLERHAFT erkannt. Der Webserver startet nicht.',
+            "PHP Konfiguration FEHLERHAFT erkannt ($prefixText`php -v/--ini/-m). Der Webserver startet nicht.",
             'Prüfe php.ini und zusätzliche INI-Dateien auf Syntax-/Parse-Fehler.',
             'Insbesondere Fehlermeldungen mit "Command line code" oder "Parse error" beheben.',
             'Nutze die oben geloggte Ausgabe von "php --ini" um die geladenen INI-Dateien zu prüfen.'
@@ -202,6 +257,7 @@ function Test-PhpConfig {
         Version = $results['-v']
         Ini = $results['--ini']
         Modules = $results['-m']
+        PrefixArgs = $PrefixArgs
     }
 }
 
@@ -209,7 +265,8 @@ function Test-SqliteSupport {
     param(
         [Parameter(Mandatory = $true)]$PhpConfigResult,
         [Parameter(Mandatory = $true)][string]$SupervisorLog,
-        [Parameter(Mandatory = $true)][string]$PhpLog
+        [Parameter(Mandatory = $true)][string]$PhpLog,
+        [string]$Mode = 'normal'
     )
 
     $moduleOutput = ''
@@ -222,12 +279,16 @@ function Test-SqliteSupport {
     $ok = $hasPdoSqlite
 
     if (-not $ok) {
-        $message = @(
-            'SQLite Support FEHLT. Der Webserver startet nicht.',
-            'Aktiviere in php.ini zwingend extension=pdo_sqlite (sqlite3 allein reicht für dieses Projekt nicht).',
-            'Falls die Haupt-php.ini beschädigt ist, repariere sie oder nutze ein sauberes portables PHP unter runtime/php/.',
-            'Die vollständige Ausgabe von "php --ini" und "php -m" steht in php.log.'
-        ) -join ' '
+        if ($Mode -eq 'no_ini') {
+            $message = 'php.ini kaputt, starte mit -n (ohne ini) wäre möglich, aber pdo_sqlite fehlt ohne ini. Webserver wird nicht gestartet. Bitte php.ini reparieren oder portable PHP mit pdo_sqlite bereitstellen. Kein Restart-Loop.'
+        } else {
+            $message = @(
+                'SQLite Support FEHLT. Der Webserver startet nicht.',
+                'Aktiviere in php.ini zwingend extension=pdo_sqlite (sqlite3 allein reicht für dieses Projekt nicht).',
+                'Falls die Haupt-php.ini beschädigt ist, repariere sie oder nutze ein sauberes portables PHP unter runtime/php/.',
+                'Die vollständige Ausgabe von "php --ini" und "php -m" steht in php.log.'
+            ) -join ' '
+        }
         Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $message
         Write-PhotoboxLog -Path $PhpLog -Level 'ERROR' -Message $message
     } else {
@@ -322,24 +383,37 @@ function Test-CameraStatus {
     }
 }
 
-function Test-WatchPathWritable {
+function Test-ImportSourcePathAccessible {
     param(
-        [Parameter(Mandatory = $true)][string]$WatchPath,
+        [Parameter(Mandatory = $true)][pscustomobject]$Config,
         [Parameter(Mandatory = $true)][string]$SupervisorLog
     )
 
-    if (-not (Test-Path -LiteralPath $WatchPath)) {
-        Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message "Watch-Ordner fehlt: $WatchPath"
-        throw "Watch-Ordner fehlt: $WatchPath"
+    $sourcePath = [string]$Config.import_source_path
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message "Import-Quelle fehlt: $sourcePath"
+        throw "Import-Quelle fehlt: $sourcePath"
     }
 
-    $probe = Join-Path $WatchPath (".write-test-{0}.tmp" -f [guid]::NewGuid().ToString('N'))
+    if ([string]$Config.import_mode -eq 'sd_card') {
+        try {
+            Get-ChildItem -LiteralPath $sourcePath -Force -ErrorAction Stop | Select-Object -First 1 | Out-Null
+            Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message "SD-Card Import-Quelle erreichbar: $sourcePath"
+        } catch {
+            $msg = "SD-Card Import-Quelle nicht lesbar: $sourcePath"
+            Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $msg
+            throw $msg
+        }
+        return
+    }
+
+    $probe = Join-Path $sourcePath (".write-test-{0}.tmp" -f [guid]::NewGuid().ToString('N'))
     try {
         Set-Content -LiteralPath $probe -Value 'ok' -Encoding ASCII
         Remove-Item -LiteralPath $probe -Force
-        Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message "Watch-Ordner ist schreibbar: $WatchPath"
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message "Watch-Ordner ist schreibbar: $sourcePath"
     } catch {
-        $msg = "Watch-Ordner nicht schreibbar: $WatchPath"
+        $msg = "Watch-Ordner nicht schreibbar: $sourcePath"
         Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $msg
         throw $msg
     }
@@ -349,7 +423,9 @@ function Start-PhotoboxPhpServer {
     param(
         [Parameter(Mandatory = $true)][string]$PhpExe,
         [Parameter(Mandatory = $true)][pscustomobject]$Config,
-        [Parameter(Mandatory = $true)][string]$PhpLog
+        [Parameter(Mandatory = $true)][string]$PhpLog,
+        [string[]]$PhpPrefixArgs = @(),
+        [Parameter(Mandatory = $true)][string]$SupervisorLog
     )
 
     $stdoutPath = Join-Path $Config.logs_path 'php.stdout.current.log'
@@ -358,8 +434,11 @@ function Start-PhotoboxPhpServer {
     Set-Content -LiteralPath $stdoutPath -Value '' -Encoding UTF8
     Set-Content -LiteralPath $stderrPath -Value '' -Encoding UTF8
 
+    $argList = @() + $PhpPrefixArgs + @('-S', "0.0.0.0:$($Config.port)", '-t', 'web')
+    Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message ("PHP Start-Commandline: {0} {1}" -f $PhpExe, ($argList -join ' '))
+
     $process = Start-Process -FilePath $PhpExe `
-        -ArgumentList @("-S", "0.0.0.0:$($Config.port)", "-t", "web") `
+        -ArgumentList $argList `
         -WorkingDirectory $Config.repo_root `
         -PassThru `
         -WindowStyle Hidden `
@@ -536,65 +615,75 @@ function Start-PhotoboxWatcher {
         [Parameter(Mandatory = $true)][string]$PhpExe,
         [Parameter(Mandatory = $true)][pscustomobject]$Config,
         [Parameter(Mandatory = $true)][string]$WatcherLog,
-        [Parameter(Mandatory = $true)][string]$LastImageMarker
+        [Parameter(Mandatory = $true)][string]$LastImageMarker,
+        [Parameter(Mandatory = $true)][string]$WatcherErrorMarker
     )
 
+    $watchPath = [string]$Config.import_source_path
+    $includeSubDirs = ([string]$Config.import_mode -eq 'sd_card')
+
     $watcher = New-Object System.IO.FileSystemWatcher
-    $watcher.Path = $Config.watch_path
-    $watcher.IncludeSubdirectories = $false
+    $watcher.Path = $watchPath
+    $watcher.IncludeSubdirectories = $includeSubDirs
     $watcher.Filter = '*.*'
     $watcher.EnableRaisingEvents = $true
 
     $action = {
-        $path = $Event.SourceEventArgs.FullPath
-        $name = $Event.SourceEventArgs.Name
-        $ext = [System.IO.Path]::GetExtension($name)
-        if ($ext -notin @('.jpg', '.jpeg', '.JPG', '.JPEG')) {
-            return
-        }
-
-        $logPath = $Event.MessageData.WatcherLog
-        $phpExe = $Event.MessageData.PhpExe
-        $marker = $Event.MessageData.LastImageMarker
-
-        $ts = (Get-Date).ToString('s')
-        Add-Content -LiteralPath $logPath -Value "$ts [INFO] Event erkannt: $name"
-
-        $ready = $false
-        $deadline = (Get-Date).AddSeconds(30)
-        $lastSize = -1
-        while ((Get-Date) -lt $deadline) {
-            try {
-                $item = Get-Item -LiteralPath $path -ErrorAction Stop
-                $size = $item.Length
-                $stream = [System.IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
-                $stream.Close()
-
-                if ($size -gt 0 -and $size -eq $lastSize) {
-                    $ready = $true
-                    break
-                }
-
-                $lastSize = $size
-            } catch {
+        try {
+            $path = $Event.SourceEventArgs.FullPath
+            $name = $Event.SourceEventArgs.Name
+            $ext = [System.IO.Path]::GetExtension($name)
+            if ($ext -notin @('.jpg', '.jpeg', '.JPG', '.JPEG')) {
+                return
             }
-            Start-Sleep -Milliseconds 500
-        }
 
-        if (-not $ready) {
+            $logPath = $Event.MessageData.WatcherLog
+            $phpExe = $Event.MessageData.PhpExe
+            $marker = $Event.MessageData.LastImageMarker
+
+            Set-Content -LiteralPath $marker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Encoding ASCII
+
             $ts = (Get-Date).ToString('s')
-            Add-Content -LiteralPath $logPath -Value "$ts [WARN] Datei nicht bereit: $path"
-            return
-        }
+            Add-Content -LiteralPath $logPath -Value "$ts [INFO] Event erkannt: $name"
 
-        $ts = (Get-Date).ToString('s')
-        Add-Content -LiteralPath $logPath -Value "$ts [INFO] Starte ingest-file: $path"
-        & $phpExe 'import/import_service.php' 'ingest-file' $path 2>&1 | ForEach-Object {
-            $lineTs = (Get-Date).ToString('s')
-            Add-Content -LiteralPath $logPath -Value "$lineTs [INFO] $_"
-        }
+            $ready = $false
+            $deadline = (Get-Date).AddSeconds(30)
+            $lastSize = -1
+            while ((Get-Date) -lt $deadline) {
+                try {
+                    $item = Get-Item -LiteralPath $path -ErrorAction Stop
+                    $size = $item.Length
+                    $stream = [System.IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
+                    $stream.Close()
 
-        Set-Content -LiteralPath $marker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Encoding ASCII
+                    if ($size -gt 0 -and $size -eq $lastSize) {
+                        $ready = $true
+                        break
+                    }
+
+                    $lastSize = $size
+                } catch {
+                }
+                Start-Sleep -Milliseconds 500
+            }
+
+            if (-not $ready) {
+                $ts = (Get-Date).ToString('s')
+                Add-Content -LiteralPath $logPath -Value "$ts [WARN] Datei nicht bereit: $path"
+                return
+            }
+
+            $ts = (Get-Date).ToString('s')
+            Add-Content -LiteralPath $logPath -Value "$ts [INFO] Starte ingest-file: $path"
+            & $phpExe 'import/import_service.php' 'ingest-file' $path 2>&1 | ForEach-Object {
+                $lineTs = (Get-Date).ToString('s')
+                Add-Content -LiteralPath $logPath -Value "$lineTs [INFO] $_"
+            }
+        } catch {
+            Set-Content -LiteralPath $Event.MessageData.WatcherErrorMarker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Encoding ASCII
+            $ts = (Get-Date).ToString('s')
+            Add-Content -LiteralPath $Event.MessageData.WatcherLog -Value "$ts [ERROR] Watcher-Handler Exception: $($_.Exception.Message)"
+        }
     }
 
     $messageData = @{
@@ -602,12 +691,13 @@ function Start-PhotoboxWatcher {
         PhpExe = $PhpExe
         RepoRoot = $Config.repo_root
         LastImageMarker = $LastImageMarker
+        WatcherErrorMarker = $WatcherErrorMarker
     }
 
     $createdSub = Register-ObjectEvent -InputObject $watcher -EventName Created -SourceIdentifier 'PhotoboxWatcherCreated' -Action $action -MessageData $messageData
     $renamedSub = Register-ObjectEvent -InputObject $watcher -EventName Renamed -SourceIdentifier 'PhotoboxWatcherRenamed' -Action $action -MessageData $messageData
 
-    return @{ Watcher = $watcher; Created = $createdSub; Renamed = $renamedSub }
+    return @{ Watcher = $watcher; Created = $createdSub; Renamed = $renamedSub; HandlerRegistered = $true }
 }
 
 function Stop-PhotoboxWatcher {
