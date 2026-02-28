@@ -36,17 +36,48 @@ switch ($command) {
 
 function run_ingest(): void
 {
+    $cfg = app_config();
     $paths = app_paths();
-    $files = glob($paths['watch'] . '/*.{jpg,jpeg,JPG,JPEG}', GLOB_BRACE);
-    if ($files === false) {
-        write_log($paths['logs'] . '/import.log', 'watch_path nicht lesbar');
+    $sourceRoot = (string) ($cfg['watch_path'] ?? $paths['watch']);
+
+    if (($cfg['import_mode'] ?? 'watch_folder') === 'sd_card') {
+        $sdCardPath = trim((string) ($cfg['sd_card_path'] ?? ''));
+        if ($sdCardPath !== '') {
+            $sourceRoot = $sdCardPath;
+        }
+    }
+
+    if (!is_dir($sourceRoot)) {
+        write_log($paths['logs'] . '/import.log', 'Import-Quelle nicht lesbar: ' . $sourceRoot);
         return;
     }
 
+    $files = find_jpeg_files_recursive($sourceRoot);
     sort($files);
     foreach ($files as $sourceFile) {
         process_source_file($sourceFile);
     }
+}
+
+function find_jpeg_files_recursive(string $root): array
+{
+    $result = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($iterator as $fileInfo) {
+        if (!$fileInfo->isFile()) {
+            continue;
+        }
+
+        $ext = strtolower((string) $fileInfo->getExtension());
+        if ($ext === 'jpg' || $ext === 'jpeg') {
+            $result[] = $fileInfo->getPathname();
+        }
+    }
+
+    return $result;
 }
 
 function run_ingest_file(string $path): void

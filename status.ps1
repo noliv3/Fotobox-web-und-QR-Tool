@@ -22,12 +22,13 @@ $sqliteState = 'FAIL'
 
 try {
     $phpExe = Get-PhpExecutable -RepoRoot $repoRoot -SupervisorLog $supervisorLog
-    $phpConfigResult = Test-PhpConfig -PhpExe $phpExe -PhpLog $phpLog -SupervisorLog $supervisorLog
+    $phpLaunchPlan = Get-PhpLaunchPlan -PhpExe $phpExe -PhpLog $phpLog -SupervisorLog $supervisorLog
+    $phpConfigResult = Test-PhpConfig -PhpExe $phpExe -PhpLog $phpLog -SupervisorLog $supervisorLog -PrefixArgs $phpLaunchPlan.DiagnosticPrefixArgs
     if ($phpConfigResult.Ok) {
         $phpConfigState = 'OK'
     }
 
-    $sqliteResult = Test-SqliteSupport -PhpConfigResult $phpConfigResult -SupervisorLog $supervisorLog -PhpLog $phpLog
+    $sqliteResult = Test-SqliteSupport -PhpConfigResult $phpConfigResult -SupervisorLog $supervisorLog -PhpLog $phpLog -Mode $phpLaunchPlan.Mode
     if ($sqliteResult.Ok) {
         $sqliteState = 'OK'
     }

@@ -6,6 +6,8 @@ return [
     'base_url' => 'http://photobox:8080/',
     'base_url_mobile' => 'http://photobox:8080/mobile/',
     'watch_path' => __DIR__ . '/../data/watch',
+    'import_mode' => 'watch_folder', // watch_folder | sd_card
+    'sd_card_path' => 'F:\\DCIM',
     'data_path' => __DIR__ . '/../data',
     'timezone' => 'Europe/Vienna',
     'port' => 8080,

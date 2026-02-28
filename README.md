@@ -38,6 +38,8 @@ Datei: `shared/config.php` (lokal erstellen, `shared/config.example.php` als Vor
 Wichtige Schlüssel:
 - `base_url`, `base_url_mobile`
 - `watch_path`, `data_path`
+- `import_mode` (`watch_folder` oder `sd_card`)
+- `sd_card_path` (z. B. `F:\\DCIM` für Kartenleser-Betrieb)
 - `timezone` (Default: `Europe/Vienna`)
 - `retention_days`
 - `gallery_window_minutes` (Default: `15`)
@@ -56,6 +58,17 @@ Wichtige Schlüssel:
 - Log-Sync von PHP-Process-Redirection ist lock-tolerant: Dateilesen erfolgt mit `FileShare.ReadWrite`, nutzt Retry-Backoff (100/300/800 ms) und schreibt bei weiterhin gelockter Datei nur `WARN`, damit `start.ps1` weiterläuft.
 - `start.ps1` kapselt `Sync-PhpProcessLogs` in Supervisor-Loop und Shutdown-Phase in `try/catch`; Log-Sync-Fehler führen nicht mehr zum Supervisor-Abbruch.
 
+
+
+### 2026-02-27 – Kamera ohne USB (SD-Karte bevorzugt)
+- Bevorzugter Importweg ohne USB-Tethering: SD-Karte der Kamera im Kartenleser des Mini-PC (`import_mode=sd_card`).
+- In diesem Modus überwacht der Watcher rekursiv `sd_card_path` statt `watch_path`; WLAN-Transfer bleibt optional.
+- Bei ausbleibenden neuen JPGs wird nur `WARN` geloggt (best-effort), kein Watcher-Neustart allein wegen Inaktivität.
+
+### 2026-02-27 – PHP-Start robust bei kaputter php.ini
+- Preflight bewertet `php -v` normal; bei Parse-Error/ExitCode!=0 wird auf `php -n` für Diagnosen und geplante Start-Commandline umgeschaltet.
+- Die tatsächliche Start-Commandline wird immer im `supervisor.log` protokolliert (inkl. `-n`, falls aktiv).
+- Falls `pdo_sqlite` im `-n`-Modus fehlt, startet der Webserver nicht (fail-fast, kein Restart-Loop) mit klarer Reparaturanweisung in den Logs.
 
 ### 2026-02-27 – Windows PHP-Diagnose und SQLite-Pflicht
 - `./start.ps1` prüft vor dem Serverstart zwingend `php -v`, `php --ini` und `php -m`.
@@ -112,6 +125,7 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-02-27 – Start/Ops gehärtet: `php -v` Preflight mit Auto-Fallback auf `php -n`; tatsächliche PHP-Start-Commandline wird immer geloggt; bei `-n` ohne `pdo_sqlite` fail-fast ohne Restart-Loop. Watcher-Health basiert jetzt auf Watcher-Objekt/Handler/Recent-Exception statt Subscription-State, Inaktivität erzeugt nur WARN. Importmodus erweitert um `watch_folder|sd_card` mit rekursivem SD-Card-Scan (Kamera ohne USB).
 - 2026-02-27 – Windows Ops Loghandling gehärtet: `Sync-PhpProcessLogs` liest Redirect-Logs lock-tolerant (`FileShare.ReadWrite`) mit Retry/Backoff (100/300/800 ms), schreibt bei persistierendem Lock `WARN` und läuft weiter; `start.ps1` behandelt Log-Sync-Fehler defensiv ohne Crash.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus `php -v/--ini/-m`-Diagnose werden beim Schreiben in `php.log` ignoriert, damit `Write-PhotoboxLog` nicht mit leerer `Message` fehlschlägt.
 - 2026-02-27 – Galerie-Auth umgestellt: `/gallery/` öffentlich/read-only, optionales `/gallery/admin.php` mit `pb_admin`-Session, Default `admin_password_hash=CHANGE_ME` (Admin deaktiviert); Ops-Fixes: SQLite-Preflight verlangt `pdo_sqlite`, `status.ps1` funktioniert ohne vorherigen Start durch `data/logs`-Autocreate.
