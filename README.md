@@ -125,6 +125,7 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-02-28 – Start-Fix (PowerShell): Der interne PHP-`-r`-Snippet für den Print-Queue-Pending-Count nutzt jetzt korrektes Quoting ohne unnötige Escape-Sequenzen. Damit werden `PHP Parse error: Unclosed "(" in Command line code` im Supervisor-Loop vermieden.
 - 2026-02-27 – Start/Ops gehärtet: `php -v` Preflight mit Auto-Fallback auf `php -n`; tatsächliche PHP-Start-Commandline wird immer geloggt; bei `-n` ohne `pdo_sqlite` fail-fast ohne Restart-Loop. Watcher-Health basiert jetzt auf Watcher-Objekt/Handler/Recent-Exception statt Subscription-State, Inaktivität erzeugt nur WARN. Importmodus erweitert um `watch_folder|sd_card` mit rekursivem SD-Card-Scan (Kamera ohne USB).
 - 2026-02-27 – Windows Ops Loghandling gehärtet: `Sync-PhpProcessLogs` liest Redirect-Logs lock-tolerant (`FileShare.ReadWrite`) mit Retry/Backoff (100/300/800 ms), schreibt bei persistierendem Lock `WARN` und läuft weiter; `start.ps1` behandelt Log-Sync-Fehler defensiv ohne Crash.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus `php -v/--ini/-m`-Diagnose werden beim Schreiben in `php.log` ignoriert, damit `Write-PhotoboxLog` nicht mit leerer `Message` fehlschlägt.

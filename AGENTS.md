@@ -199,6 +199,7 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-02-28 – Start-Fix (PowerShell): Quoting im `php -r`-Inline-Code für `Get-PendingPrintJobsCount` korrigiert; vermeidet `Unclosed "(" in Command line code` im laufenden Supervisor-Loop.
 - 2026-02-27 – Start/Ops+Import erweitert: PHP-Preflight mit `php -v` und Fallback-Plan `-n`, fail-fast ohne Restart-Loop wenn `pdo_sqlite` fehlt, Watcher-Health ohne Subscription-State (Inaktivität nur WARN), neuer Importmodus `watch_folder|sd_card` mit rekursiver SD-Karten-Überwachung.
 - 2026-02-27 – Ops-Log-Sync gehärtet: lock-tolerantes Lesen von `php.stdout.current.log`/`php.stderr.current.log` via `FileShare.ReadWrite`, Retry-Backoff (100/300/800 ms), danach `WARN` + Continue; Zugriff serialisiert per Mutex, `start.ps1` fängt Sync-Fehler defensiv ab.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus der PHP-Diagnoseausgabe (`php -v/--ini/-m`) werden beim Schreiben nach `php.log` übersprungen, damit `Write-PhotoboxLog` keinen leeren `Message`-Parameter erhält.

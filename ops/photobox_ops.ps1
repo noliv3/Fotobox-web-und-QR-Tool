@@ -724,11 +724,22 @@ function Get-PendingPrintJobsCount {
         return 0
     }
 
-    $code = '$db=$argv[1];$pdo=new PDO("sqlite:$db");$c=$pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = ''pending''")->fetchColumn();echo (int)$c;'
+    $tempScript = Join-Path $Config.logs_path 'pending_jobs_count.php'
+    $scriptContent = @'
+<?php
+$db = $argv[1] ?? '';
+$pdo = new PDO('sqlite:' . $db);
+$count = $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = 'pending'")->fetchColumn();
+echo (int)$count;
+'@
+
     try {
-        $result = & $PhpExe '-r' $code $Config.db_path
+        Set-Content -LiteralPath $tempScript -Value $scriptContent -Encoding UTF8
+        $result = & $PhpExe $tempScript $Config.db_path
         return [int]$result
     } catch {
         return 0
+    } finally {
+        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
     }
 }
