@@ -35,3 +35,8 @@ scanned/
 # Environment
 .env
 .env.*
+/data/
+*.sqlite
+/sss.zip
+
+/shared/config.php

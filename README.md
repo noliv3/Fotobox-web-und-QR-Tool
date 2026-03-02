@@ -53,7 +53,7 @@ Wichtige Schlüssel:
 - Start erfolgt über `./start.ps1` (Supervisor + Watcher + PHP-Webserver unter `web` mit Pfaden `/mobile` und `/gallery`).
 - Stop erfolgt über `./stop.ps1` (beendet Supervisor/PHP best-effort über State-Datei).
 - Status erfolgt über `./status.ps1` (zeigt Prozessstatus, Port-Check, Watcher-Status und Log-Tails).
-- Logs liegen in `data/logs`: `supervisor.log`, `watcher.log`, `php.log`.
+- Logs liegen in `data/logs`: `supervisor.log`, `watcher.log`, `php.log`, `import.log`, `cleanup.log`, `print_worker.log`.
 - Start prüft Port, Firewall-Regel, Watch-Ordner, Kamera-/Drucker-Hinweise und protokolliert Failure-Modes ohne interaktive Prompts.
 - Log-Sync von PHP-Process-Redirection ist lock-tolerant: Dateilesen erfolgt mit `FileShare.ReadWrite`, nutzt Retry-Backoff (100/300/800 ms) und schreibt bei weiterhin gelockter Datei nur `WARN`, damit `start.ps1` weiterläuft.
 - `start.ps1` kapselt `Sync-PhpProcessLogs` in Supervisor-Loop und Shutdown-Phase in `try/catch`; Log-Sync-Fehler führen nicht mehr zum Supervisor-Abbruch.
@@ -103,6 +103,11 @@ php import/import_service.php init-db
 php import/import_service.php ingest
 ```
 
+### Einzeldatei importieren
+```bash
+php import/import_service.php ingest-file <path>
+```
+
 ### Alte Daten bereinigen
 ```bash
 php import/import_service.php cleanup
@@ -125,6 +130,13 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-03-01 – Final Spec v1.0 umgesetzt: Mobile auf zentrales Layout mit Tabs/Overlay/Footer + Toast/Long-Press/Undo umgestellt, Session-Merkliste via `api_mark.php` (add/remove/toggle/list), Detailseite/ZIP/Bestellfluss erneuert, Gallery auf read-only Statusseite reduziert und neuer stiller `/admin/`-Bereich mit Jobs/Bestellungen/Bildern/Drucker-Settings (inkl. Printer-Erkennung und Action-Logging) hinzugefuegt.
+- 2026-03-01 – Kompatibilitätsfix im Bootstrap: Legacy-Funktionsnamen für Import/Print/ältere Endpunkte werden wieder unterstützt (`app_*`, `write_log`, Token-/Photo-Helfer), sodass Watcher-`ingest-file` nicht mehr mit `undefined function app_paths()` abbricht.
+- 2026-03-01 – Import-Fallback ohne GD: Wenn `imagecreatefromjpeg` nicht verfügbar ist, wird das Thumbnail als Kopie des Originals erzeugt, damit der Import nicht mit Fatal Error stoppt.
+- 2026-03-01 – Ops-Verbesserung für Stabilität: Der Watcher reagiert neben `Created/Renamed` nun auch auf `Changed` und nutzt für `ingest-file` den absoluten Pfad auf `import/import_service.php`, damit JPEG-Events im Watch-Ordner zuverlässig verarbeitet werden. Zusätzlich wurde der interne `php -r`-Pending-Count-Aufruf robust gemacht (Here-String + STDERR-Abfangung), um sporadische `Command line code`-Parse-Ausgaben zu vermeiden.
+- 2026-03-01 – Doku-Konsistenz ergänzt: Logliste um `import.log`, `cleanup.log`, `print_worker.log` erweitert und Kommando `ingest-file` dokumentiert; Portangaben bleiben konsistent auf Default `8080`.
+- 2026-03-01 – Print standardmäßig deaktiviert bis bewusst konfiguriert: `print_api_key` aktiviert Print nur, wenn er weder leer noch `CHANGE_ME_PRINT_API_KEY` ist. In `mobile/photo.php` erscheint „Drucken“ nur bei Zeitfenster + konfiguriertem Print; sonst innerhalb des Zeitfensters Hinweis „Druck nicht konfiguriert“. `mobile/api_print.php` liefert dann `503 print_not_configured`, außerhalb des Zeitfensters weiterhin `403 outside_print_window`.
+- 2026-03-01 – Print-Worker entblockt: nicht druckbare Jobs werden nach genau einem Verarbeitungsversuch auf `error` gesetzt statt auf `pending` (Windows: `NOT_IMPLEMENTED_WINDOWS_PRINT`, ohne `lp/lpr`: `NO_SYSTEM_SPOOLER`), damit nachfolgende Jobs nicht blockieren.
 - 2026-02-27 – Start/Ops gehärtet: `php -v` Preflight mit Auto-Fallback auf `php -n`; tatsächliche PHP-Start-Commandline wird immer geloggt; bei `-n` ohne `pdo_sqlite` fail-fast ohne Restart-Loop. Watcher-Health basiert jetzt auf Watcher-Objekt/Handler/Recent-Exception statt Subscription-State, Inaktivität erzeugt nur WARN. Importmodus erweitert um `watch_folder|sd_card` mit rekursivem SD-Card-Scan (Kamera ohne USB).
 - 2026-02-27 – Windows Ops Loghandling gehärtet: `Sync-PhpProcessLogs` liest Redirect-Logs lock-tolerant (`FileShare.ReadWrite`) mit Retry/Backoff (100/300/800 ms), schreibt bei persistierendem Lock `WARN` und läuft weiter; `start.ps1` behandelt Log-Sync-Fehler defensiv ohne Crash.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus `php -v/--ini/-m`-Diagnose werden beim Schreiben in `php.log` ignoriert, damit `Write-PhotoboxLog` nicht mit leerer `Message` fehlschlägt.

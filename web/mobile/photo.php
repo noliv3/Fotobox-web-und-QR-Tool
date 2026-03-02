@@ -3,59 +3,73 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../shared/bootstrap.php';
+require_once __DIR__ . '/_layout.php';
 
 noCacheHeaders();
 noIndexHeaders();
 
+session_name('pb_mobile');
+session_start();
+if (!isset($_SESSION['favs']) || !is_array($_SESSION['favs'])) {
+    $_SESSION['favs'] = [];
+}
+
 $pdo = pdo();
-$token = $_GET['t'] ?? '';
-if (!is_string($token) || !isValidToken($token)) {
-    http_response_code(400);
-    echo 'invalid_token';
-    exit;
+$photoId = trim((string) ($_GET['id'] ?? ''));
+$photoToken = trim((string) ($_GET['t'] ?? ''));
+$photo = null;
+if ($photoId !== '') {
+    $stmt = $pdo->prepare('SELECT id, token, ts FROM photos WHERE id = :id AND deleted = 0 LIMIT 1');
+    $stmt->execute([':id' => $photoId]);
+    $row = $stmt->fetch();
+    if (is_array($row)) {
+        $photo = $row;
+    }
+} elseif ($photoToken !== '' && isValidToken($photoToken)) {
+    $stmt = $pdo->prepare('SELECT id, token, ts FROM photos WHERE token = :token AND deleted = 0 LIMIT 1');
+    $stmt->execute([':token' => $photoToken]);
+    $row = $stmt->fetch();
+    if (is_array($row)) {
+        $photo = $row;
+    }
 }
 
-$photo = findPhotoByToken($pdo, $token);
+ob_start();
 if ($photo === null) {
-    http_response_code(404);
-    echo 'photo_not_found';
-    exit;
-}
-
-$printable = nowTs() - (int) $photo['ts'] <= ((int) config()['gallery_window_minutes'] * 60);
-?>
-<!doctype html>
-<html lang="de">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Foto</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-<main class="container">
-    <p class="nav-links"><a href="index.php">Zur Galerie</a> <a href="order.php">Meine Bestellung</a></p>
-    <img class="hero" src="image.php?t=<?= urlencode($token) ?>&amp;type=original" alt="Foto">
-
+    ?>
+    <div class="empty-state">
+        <p>Foto nicht gefunden</p>
+        <p><a href="/mobile/">Zurueck zur Startseite</a></p>
+    </div>
+    <?php
+} else {
+    $cfg = config();
+    $printable = is_photo_printable($photo);
+    $printConfigured = isPrintConfigured($cfg);
+    $isFav = isset($_SESSION['favs'][(string) $photo['id']]);
+    ?>
+    <img class="detail-image" src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=original" alt="Foto">
+    <div class="panel muted">Aufnahme: <?= date('d.m.Y H:i:s', (int) $photo['ts']) ?></div>
     <div class="panel actions">
-        <a class="button" href="download.php?t=<?= urlencode($token) ?>">Download</a>
-        <?php if ($printable): ?>
-            <form method="post" action="api_print.php" class="inline-form">
-                <input type="hidden" name="t" value="<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>">
-                <input type="hidden" name="print_api_key" value="<?= htmlspecialchars((string) config()['print_api_key'], ENT_QUOTES, 'UTF-8') ?>">
+        <a class="button" href="/mobile/download.php?t=<?= urlencode((string) $photo['token']) ?>">Download</a>
+        <?php if ($printable && $printConfigured): ?>
+            <form method="post" action="/mobile/api_print.php" class="actions" style="margin:0;">
+                <input type="hidden" name="t" value="<?= mobileEsc((string) $photo['token']) ?>">
+                <input type="hidden" name="print_api_key" value="<?= mobileEsc((string) $cfg['print_api_key']) ?>">
                 <button type="submit">Drucken</button>
             </form>
-        <?php else: ?>
-            <span class="muted">Druck nur im Zeitfenster möglich.</span>
+        <?php elseif ($printable): ?>
+            <span class="muted">Druck nicht konfiguriert</span>
         <?php endif; ?>
+        <button type="button" data-fav-toggle data-photo-id="<?= mobileEsc((string) $photo['id']) ?>"><?= $isFav ? 'Gemerkt' : 'Merken' ?></button>
     </div>
+    <?php
+}
+$content = (string) ob_get_clean();
 
-    <form method="post" action="api_mark.php" class="panel form-stack">
-        <input type="hidden" name="t" value="<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>">
-        <label for="guest_name">Name für Bestellung (optional)</label>
-        <input id="guest_name" name="guest_name" maxlength="80" autocomplete="name">
-        <button type="submit">Zur Bestellung hinzufügen</button>
-    </form>
-</main>
-</body>
-</html>
+mobileRenderLayout([
+    'title' => 'Foto',
+    'status_line' => 'Fotoansicht',
+    'active_view' => 'recent',
+    'content_html' => $content,
+]);

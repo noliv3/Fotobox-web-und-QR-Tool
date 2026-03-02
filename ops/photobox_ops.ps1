@@ -627,6 +627,9 @@ function Start-PhotoboxWatcher {
     $watcher.IncludeSubdirectories = $includeSubDirs
     $watcher.Filter = '*.*'
     $watcher.EnableRaisingEvents = $true
+    if (-not (Test-Path -LiteralPath $WatcherLog)) {
+        New-Item -Path $WatcherLog -ItemType File -Force | Out-Null
+    }
 
     $action = {
         try {
@@ -640,6 +643,7 @@ function Start-PhotoboxWatcher {
             $logPath = $Event.MessageData.WatcherLog
             $phpExe = $Event.MessageData.PhpExe
             $marker = $Event.MessageData.LastImageMarker
+            $importScript = Join-Path $Event.MessageData.RepoRoot 'import/import_service.php'
 
             Set-Content -LiteralPath $marker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Encoding ASCII
 
@@ -675,7 +679,7 @@ function Start-PhotoboxWatcher {
 
             $ts = (Get-Date).ToString('s')
             Add-Content -LiteralPath $logPath -Value "$ts [INFO] Starte ingest-file: $path"
-            & $phpExe 'import/import_service.php' 'ingest-file' $path 2>&1 | ForEach-Object {
+            & $phpExe $importScript 'ingest-file' $path 2>&1 | ForEach-Object {
                 $lineTs = (Get-Date).ToString('s')
                 Add-Content -LiteralPath $logPath -Value "$lineTs [INFO] $_"
             }
@@ -695,15 +699,16 @@ function Start-PhotoboxWatcher {
     }
 
     $createdSub = Register-ObjectEvent -InputObject $watcher -EventName Created -SourceIdentifier 'PhotoboxWatcherCreated' -Action $action -MessageData $messageData
+    $changedSub = Register-ObjectEvent -InputObject $watcher -EventName Changed -SourceIdentifier 'PhotoboxWatcherChanged' -Action $action -MessageData $messageData
     $renamedSub = Register-ObjectEvent -InputObject $watcher -EventName Renamed -SourceIdentifier 'PhotoboxWatcherRenamed' -Action $action -MessageData $messageData
 
-    return @{ Watcher = $watcher; Created = $createdSub; Renamed = $renamedSub; HandlerRegistered = $true }
+    return @{ Watcher = $watcher; Created = $createdSub; Changed = $changedSub; Renamed = $renamedSub; HandlerRegistered = $true }
 }
 
 function Stop-PhotoboxWatcher {
     param([Parameter(Mandatory = $true)]$Bundle)
 
-    foreach ($id in @('PhotoboxWatcherCreated', 'PhotoboxWatcherRenamed')) {
+    foreach ($id in @('PhotoboxWatcherCreated', 'PhotoboxWatcherChanged', 'PhotoboxWatcherRenamed')) {
         Unregister-Event -SourceIdentifier $id -ErrorAction SilentlyContinue
         Get-Job -Name $id -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
     }
@@ -724,10 +729,23 @@ function Get-PendingPrintJobsCount {
         return 0
     }
 
-    $code = '$db=$argv[1];$pdo=new PDO("sqlite:$db");$c=$pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = ''pending''")->fetchColumn();echo (int)$c;'
+    $code = @'
+$db = $argv[1] ?? '';
+$pdo = new PDO("sqlite:$db");
+$count = $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = 'pending'")->fetchColumn();
+echo (int)$count;
+'@
     try {
-        $result = & $PhpExe '-r' $code $Config.db_path
-        return [int]$result
+        $result = & $PhpExe '-r' $code $Config.db_path 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            return 0
+        }
+
+        $text = (($result | ForEach-Object { [string]$_ }) -join '').Trim()
+        if ($text -match '^\d+$') {
+            return [int]$text
+        }
+        return 0
     } catch {
         return 0
     }

@@ -7,22 +7,13 @@ require_once __DIR__ . '/../../shared/bootstrap.php';
 noCacheHeaders();
 
 $pdo = pdo();
-$oneHourAgo = nowTs() - 3600;
+$now = date('Y-m-d H:i:s');
+$photoCount = (int) $pdo->query('SELECT COUNT(*) FROM photos WHERE deleted = 0')->fetchColumn();
+$lastImportTs = (int) $pdo->query('SELECT COALESCE(MAX(ts),0) FROM photos WHERE deleted = 0')->fetchColumn();
+$printConfigured = isPrintConfigured(config()) ? 'ja' : 'nein';
 
-$counts = [
-    'total_photos' => (int) $pdo->query('SELECT COUNT(*) FROM photos WHERE deleted = 0')->fetchColumn(),
-    'jobs_pending' => (int) $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = 'pending'")->fetchColumn(),
-    'jobs_printing' => (int) $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = 'printing'")->fetchColumn(),
-    'jobs_done' => (int) $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = 'done'")->fetchColumn(),
-    'jobs_error' => (int) $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status = 'error'")->fetchColumn(),
-];
-
-$stmtLastHour = $pdo->prepare('SELECT COUNT(*) FROM photos WHERE deleted = 0 AND ts >= :minTs');
-$stmtLastHour->execute([':minTs' => $oneHourAgo]);
-$counts['last_hour'] = (int) $stmtLastHour->fetchColumn();
-
-$lastPhotos = $pdo->query('SELECT token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 12')->fetchAll();
-$lastJobs = $pdo->query('SELECT id, status, error, created_ts FROM print_jobs ORDER BY id DESC LIMIT 12')->fetchAll();
+$photos = $pdo->query('SELECT token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 12')->fetchAll();
+$jobs = $pdo->query('SELECT id, photo_id, status, error, created_ts FROM print_jobs ORDER BY id DESC LIMIT 20')->fetchAll();
 ?>
 <!doctype html>
 <html lang="de">
@@ -30,30 +21,24 @@ $lastJobs = $pdo->query('SELECT id, status, error, created_ts FROM print_jobs OR
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Galerie Status</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/gallery/style.css">
 </head>
 <body>
 <main class="container">
-    <header class="header-row">
-        <h1>Galerie Statusseite</h1>
-        <a href="admin.php">Admin</a>
-    </header>
-
-    <section class="panel stats-grid">
-        <div><strong>Fotos gesamt</strong><span><?= $counts['total_photos'] ?></span></div>
-        <div><strong>Fotos letzte Stunde</strong><span><?= $counts['last_hour'] ?></span></div>
-        <div><strong>Jobs pending</strong><span><?= $counts['jobs_pending'] ?></span></div>
-        <div><strong>Jobs printing</strong><span><?= $counts['jobs_printing'] ?></span></div>
-        <div><strong>Jobs done</strong><span><?= $counts['jobs_done'] ?></span></div>
-        <div><strong>Jobs error</strong><span><?= $counts['jobs_error'] ?></span></div>
+    <h1>Galerie</h1>
+    <section class="panel">
+        <p><strong>Uhrzeit:</strong> <?= htmlspecialchars($now, ENT_QUOTES, 'UTF-8') ?></p>
+        <p><strong>Anzahl Fotos:</strong> <?= $photoCount ?></p>
+        <p><strong>Letzter Import:</strong> <?= $lastImportTs > 0 ? date('Y-m-d H:i:s', $lastImportTs) : 'n/a' ?></p>
+        <p><strong>Print konfiguriert:</strong> <?= $printConfigured ?></p>
     </section>
 
     <section class="panel">
         <h2>Letzte 12 Fotos</h2>
         <div class="photo-grid">
-            <?php foreach ($lastPhotos as $photo): ?>
-                <a class="photo-card" href="../mobile/photo.php?t=<?= urlencode((string) $photo['token']) ?>">
-                    <img src="../mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Thumb" loading="lazy">
+            <?php foreach ($photos as $photo): ?>
+                <a class="photo-card" href="/mobile/photo.php?t=<?= urlencode((string) $photo['token']) ?>">
+                    <img src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto" loading="lazy">
                     <span><?= date('d.m. H:i', (int) $photo['ts']) ?></span>
                 </a>
             <?php endforeach; ?>
@@ -61,14 +46,14 @@ $lastJobs = $pdo->query('SELECT id, status, error, created_ts FROM print_jobs OR
     </section>
 
     <section class="panel">
-        <h2>Letzte 12 Jobs</h2>
+        <h2>Letzte 20 Druckjobs</h2>
         <ul class="job-list">
-            <?php foreach ($lastJobs as $job): ?>
+            <?php foreach ($jobs as $job): ?>
                 <li>
                     <strong>#<?= (int) $job['id'] ?></strong>
                     <span><?= htmlspecialchars((string) $job['status'], ENT_QUOTES, 'UTF-8') ?></span>
                     <small><?= date('Y-m-d H:i:s', (int) $job['created_ts']) ?></small>
-                    <em><?= htmlspecialchars(mb_substr((string) ($job['error'] ?? ''), 0, 80), ENT_QUOTES, 'UTF-8') ?></em>
+                    <em><?= htmlspecialchars((string) ($job['error'] ?? ''), ENT_QUOTES, 'UTF-8') ?></em>
                 </li>
             <?php endforeach; ?>
         </ul>

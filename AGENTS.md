@@ -13,9 +13,12 @@
 ## Projektstruktur
 - `README.md`: Human-First Projekt- und Betriebsübersicht
 - `AGENTS.md`: Agent-First Arbeits-, Architektur- und Dokumentationsstandard
+- `web/index.php`: Root-Entry, Redirect auf `/mobile/`
 - `web/gallery`: Galerie-Websegment für Admin/Monitor (lokal)
 - `web/mobile`: Handy-Websegment für Gäste und API
 - `import`: Importdienst- und Druckworker-CLI
+- `ops`: PowerShell-Ops-Module und Supervisor-Helfer
+- `runtime`: Laufzeitartefakte (z. B. PID/State)
 - `shared`: Gemeinsame Konfiguration, Bootstrap, Utilities
 - `data`: Eventdaten (`originals`, `thumbs`, `queue`, `logs`, `watch`); niemals Eventdateien committen
 
@@ -48,12 +51,14 @@
 - start: `./start.ps1` (Windows Supervisor-Start, startet PHP `-t web` auf konfiguriertem Port)
 - stop: `./stop.ps1` (beendet Supervisor/PHP best-effort)
 - status: `./status.ps1` (zeigt Supervisor/PHP/Port/Watcher + Log-Tail)
-- legacy start (manuell): `php -S 0.0.0.0:8000 -t web`
+- manueller Start (Default-Port 8080): `php -S 0.0.0.0:8080 -t web`
+- historisch (nicht Default): `php -S 0.0.0.0:8000 -t web`
 - test: _derzeit nicht definiert (MVP ohne Testsuite)_
 - lint: _derzeit nicht definiert_
 - build: _nicht erforderlich (PHP ohne Build-Schritt)_
 - db init: `php import/import_service.php init-db`
 - ingest: `php import/import_service.php ingest`
+- ingest-file: `php import/import_service.php ingest-file <path>`
 - cleanup: `php import/import_service.php cleanup`
 - print worker: `php import/print_worker.php run`
 
@@ -67,16 +72,16 @@
 
 ## API-Endpunkte
 ### 2026-02-27 – Mobile API Dokumentation
-- Endpoint: `/web/mobile/api_print.php`
+- Endpoint: `/mobile/api_print.php`
   - Zweck: Druckjob anlegen
   - Request: `POST t`, Auth über Header `X-API-Key` oder Feld `print_api_key`
   - Response: `{jobId:int}`
-  - Fehlerfälle: `400 invalid_token`, `403 forbidden|outside_print_window`, `429 rate_limited`, `404 photo_not_found`
+  - Fehlerfälle: `400 invalid_token`, `403 forbidden|outside_print_window`, `429 rate_limited`, `404 photo_not_found`, `503 print_not_configured`
   - Security: API-Key + IP-Rate-Limit + Zeitfensterprüfung
   - Privacy: keine PII außer IP-basiertes Rate-Limit in `kv`
-  - Status/ToDo: Linux-Spooler aktiv, Windows bewusst Placeholder im Worker
+  - Status/ToDo: Print ist nur mit gesetztem `print_api_key` aktiv (nicht leer, nicht `CHANGE_ME_PRINT_API_KEY`); sonst `503 print_not_configured`. Linux-Spooler aktiv; unter Windows endet der Job mit `error=NOT_IMPLEMENTED_WINDOWS_PRINT` (kein Re-Pending)
 
-- Endpoint: `/web/mobile/api_job.php`
+- Endpoint: `/mobile/api_job.php`
   - Zweck: Jobstatus lesen
   - Request: `GET id`
   - Response: `{status:string,error:string|null}`
@@ -85,16 +90,16 @@
   - Privacy: keine personenbezogenen Felder
   - Status/ToDo: offen für optionales Polling im Frontend
 
-- Endpoint: `/web/mobile/api_mark.php`
+- Endpoint: `/mobile/api_mark.php`
   - Zweck: Foto in Session-Bestellung aufnehmen
   - Request: `POST t`, optional `guest_name`
   - Response: `{orderId:int,itemsCount:int}`
   - Fehlerfälle: `400 invalid_token`, `404 photo_not_found`
   - Security: Token-Validierung, Name-Sanitizing, session-basierte Zuordnung
   - Privacy: speichert nur `guest_name` und Session-Token
-  - Status/ToDo: ZIP bleibt Placeholder
+  - Status/ToDo: stabiler MVP-Umfang (implementiert)
 
-- Endpoint: `/web/mobile/api_unmark.php`
+- Endpoint: `/mobile/api_unmark.php`
   - Zweck: Foto aus Session-Bestellung entfernen
   - Request: `POST t`
   - Response: `{itemsCount:int}`
@@ -103,7 +108,7 @@
   - Privacy: keine zusätzlichen Daten
   - Status/ToDo: stabiler MVP-Umfang
 
-- Endpoint: `/web/mobile/api_order_name.php`
+- Endpoint: `/mobile/api_order_name.php`
   - Zweck: Namen der aktuellen Session-Bestellung setzen/ändern
   - Request: `POST guest_name`
   - Response: `{ok:true}`
@@ -113,14 +118,19 @@
   - Status/ToDo: stabiler MVP-Umfang
 
 ### 2026-02-27 – Zusätzliche Web-Endpunkte
-- Endpoint: `/web/mobile/image.php`
+- Endpoint: `/`
+  - Zweck: Root-Redirect auf `/mobile/`
+  - Request: `GET`
+  - Response: `302 Location: /mobile/`
+
+- Endpoint: `/mobile/image.php`
   - Zweck: JPEG-Ausgabe für `thumb|original` per Token
   - Request: `GET t`, `GET type`
   - Response: `image/jpeg`
   - Fehlerfälle: `400 invalid_token|invalid_type`, `404 not_found`
   - Security: niemals Dateipfade aus Query verwenden
 
-- Endpoint: `/web/mobile/download.php`
+- Endpoint: `/mobile/download.php`
   - Zweck: Originalbild als Attachment herunterladen
   - Request: `GET t`
   - Response: `image/jpeg` mit `Content-Disposition: attachment`
@@ -199,6 +209,13 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-03-01 – Final Spec v1.0 integriert: Mobile-Routing `view=recent|all|favs` mit einheitlichem Layout/Toast/Long-Press/Undo, Session-Merkliste-API erweitert (`add|remove|toggle|list`), ZIP-Download und neuer Bestellabschluss (`order_done`) implementiert. Gallery ist read-only Statusseite; neuer `/admin/`-Bereich mit stillem Code-Gating, Tabs (Jobs/Bestellungen/Bilder/Drucker), Printer-Settings (`settings.printer_name`) und gezieltem Action-Logging (`admin.log`).
+- 2026-03-01 – PHP-Bootstrap-Kompatibilität ergänzt: Legacy-Aufrufe (`app_config`, `app_paths`, `app_pdo`, `write_log`, `random_token`, `validate_token`, `find_photo_by_token`, `is_photo_printable`, `initialize_database`) werden wieder zentral in `shared/bootstrap.php` bereitgestellt, damit Import/Print/Web-Endpunkte konsistent funktionieren.
+- 2026-03-01 – Import robust ohne GD: `import/import_service.php` nutzt bei fehlender GD-Funktion `imagecreatefromjpeg` einen Fallback und erstellt das Thumbnail als Kopie des Originals statt mit Fatal Error abzubrechen.
+- 2026-03-01 – Watcher/Ops-Fix: Watcher verarbeitet jetzt zusätzlich `Changed`-Events und ruft `import/import_service.php ingest-file <path>` über absoluten Skriptpfad auf (robuster gegen Runspace/Working-Directory-Probleme). Außerdem wurde der `php -r`-Pending-Count im Supervisor auf robuste Here-String-Ausführung mit STDERR-Abfangung umgestellt, um sporadische `Command line code`-Parse-Meldungen nicht unkontrolliert auszugeben.
+- 2026-03-01 – Doku-Konsistenz korrigiert: API-Endpunkte auf `/mobile/...` vereinheitlicht, Root-Redirect `/ -> /mobile/` ergänzt, Projektstruktur um `ops`, `runtime`, `web/index.php` erweitert, Kommandoliste um `ingest-file` ergänzt, manueller Start auf Default-Port `8080` präzisiert (`8000` nur historisch), `api_mark.php`-Status als implementiert dokumentiert.
+- 2026-03-01 – Print-API/UI gehärtet: Print bleibt standardmäßig deaktiviert, solange `print_api_key` leer oder `CHANGE_ME_PRINT_API_KEY` ist. `web/mobile/photo.php` zeigt den Druckbutton nur bei Zeitfenster + konfiguriertem Print, sonst Hinweis „Druck nicht konfiguriert“. `web/mobile/api_print.php` liefert in diesem Fall `503 print_not_configured`; außerhalb des Zeitfensters bleibt `403 outside_print_window`.
+- 2026-03-01 – Print-Queue-Verhalten geschärft: `import/print_worker.php` setzt nicht druckbare Jobs nach einem Versuch auf `error` statt `pending` (Windows: `NOT_IMPLEMENTED_WINDOWS_PRINT`, kein Spooler: `NO_SYSTEM_SPOOLER`); dadurch blockieren solche Jobs keine nachfolgenden Pending-Jobs.
 - 2026-02-27 – Start/Ops+Import erweitert: PHP-Preflight mit `php -v` und Fallback-Plan `-n`, fail-fast ohne Restart-Loop wenn `pdo_sqlite` fehlt, Watcher-Health ohne Subscription-State (Inaktivität nur WARN), neuer Importmodus `watch_folder|sd_card` mit rekursiver SD-Karten-Überwachung.
 - 2026-02-27 – Ops-Log-Sync gehärtet: lock-tolerantes Lesen von `php.stdout.current.log`/`php.stderr.current.log` via `FileShare.ReadWrite`, Retry-Backoff (100/300/800 ms), danach `WARN` + Continue; Zugriff serialisiert per Mutex, `start.ps1` fängt Sync-Fehler defensiv ab.
 - 2026-02-27 – Start-Fix: Leere Zeilen aus der PHP-Diagnoseausgabe (`php -v/--ini/-m`) werden beim Schreiben nach `php.log` übersprungen, damit `Write-PhotoboxLog` keinen leeren `Message`-Parameter erhält.

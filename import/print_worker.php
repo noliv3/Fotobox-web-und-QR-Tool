@@ -48,19 +48,27 @@ if (!is_file($imagePath)) {
 set_job_status((int) $job['id'], 'printing', null);
 
 if (PHP_OS_FAMILY === 'Windows') {
-    set_job_status((int) $job['id'], 'pending', 'NOT_IMPLEMENTED_WINDOWS_PRINT');
-    write_log($log, 'Job ' . $job['id'] . ' bleibt pending: NOT_IMPLEMENTED_WINDOWS_PRINT');
+    set_job_status((int) $job['id'], 'error', 'NOT_IMPLEMENTED_WINDOWS_PRINT');
+    write_log($log, 'Job ' . $job['id'] . ' beendet mit error: NOT_IMPLEMENTED_WINDOWS_PRINT');
     exit(0);
 }
 
 $printerCommand = command_exists('lp') ? 'lp' : (command_exists('lpr') ? 'lpr' : '');
 if ($printerCommand === '') {
-    set_job_status((int) $job['id'], 'pending', 'NO_SYSTEM_SPOOLER');
-    write_log($log, 'Job ' . $job['id'] . ' bleibt pending: NO_SYSTEM_SPOOLER');
+    set_job_status((int) $job['id'], 'error', 'NO_SYSTEM_SPOOLER');
+    write_log($log, 'Job ' . $job['id'] . ' beendet mit error: NO_SYSTEM_SPOOLER');
     exit(0);
 }
 
-$cmd = $printerCommand . ' ' . escapeshellarg($imagePath) . ' 2>&1';
+$printerName = getConfiguredPrinterName($pdo);
+$printerOption = '';
+if ($printerName !== '') {
+    $printerOption = $printerCommand === 'lp'
+        ? (' -d ' . escapeshellarg($printerName))
+        : (' -P ' . escapeshellarg($printerName));
+}
+
+$cmd = $printerCommand . $printerOption . ' ' . escapeshellarg($imagePath) . ' 2>&1';
 exec($cmd, $output, $code);
 
 if ($code === 0) {

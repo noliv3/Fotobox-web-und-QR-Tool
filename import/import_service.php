@@ -108,8 +108,11 @@ function process_source_file(string $sourceFile): void
         return;
     }
 
-    $exists = $pdo->prepare('SELECT id FROM photos WHERE filename = :filename LIMIT 1');
-    $exists->execute(['filename' => $fingerprint]);
+    $hasFingerprint = photos_has_column($pdo, 'fingerprint');
+    $exists = $hasFingerprint
+        ? $pdo->prepare('SELECT id FROM photos WHERE fingerprint = :fingerprint AND deleted = 0 LIMIT 1')
+        : $pdo->prepare('SELECT id FROM photos WHERE filename = :filename LIMIT 1');
+    $exists->execute($hasFingerprint ? ['fingerprint' => $fingerprint] : ['filename' => $fingerprint]);
     if ($exists->fetchColumn()) {
         write_log($log, 'Bereits importiert: ' . basename($sourceFile));
         return;
@@ -132,16 +135,43 @@ function process_source_file(string $sourceFile): void
     }
 
     $ts = filemtime($sourceFile) ?: time();
-    $insert = $pdo->prepare('INSERT INTO photos(id, ts, filename, token, thumb_filename, deleted) VALUES(:id,:ts,:filename,:token,:thumb,0)');
-    $insert->execute([
+    $insert = $hasFingerprint
+        ? $pdo->prepare('INSERT INTO photos(id, ts, filename, token, thumb_filename, deleted, fingerprint) VALUES(:id,:ts,:filename,:token,:thumb,0,:fingerprint)')
+        : $pdo->prepare('INSERT INTO photos(id, ts, filename, token, thumb_filename, deleted) VALUES(:id,:ts,:filename,:token,:thumb,0)');
+    $filename = $id . '.jpg';
+    $thumbFilename = $id . '.jpg';
+    $insertPayload = [
         'id' => $id,
         'ts' => $ts,
-        'filename' => $fingerprint,
+        'filename' => $filename,
         'token' => $token,
-        'thumb' => $id . '.jpg',
-    ]);
+        'thumb' => $thumbFilename,
+    ];
+    if ($hasFingerprint) {
+        $insertPayload['fingerprint'] = $fingerprint;
+    }
+    $insert->execute($insertPayload);
 
     write_log($log, sprintf('Importiert: %s -> %s', basename($sourceFile), $id));
+}
+
+function photos_has_column(PDO $pdo, string $column): bool
+{
+    static $cache = [];
+    if (array_key_exists($column, $cache)) {
+        return $cache[$column];
+    }
+
+    $rows = $pdo->query('PRAGMA table_info(photos)')->fetchAll();
+    foreach ($rows as $row) {
+        if (isset($row['name']) && (string) $row['name'] === $column) {
+            $cache[$column] = true;
+            return true;
+        }
+    }
+
+    $cache[$column] = false;
+    return false;
 }
 
 function run_cleanup(): void
@@ -175,6 +205,11 @@ function run_cleanup(): void
 
 function create_thumbnail(string $source, string $destination, int $targetWidth): bool
 {
+    // Fallback für Umgebungen ohne GD: Thumbnail bleibt funktional als Kopie.
+    if (!function_exists('imagecreatefromjpeg')) {
+        return copy($source, $destination);
+    }
+
     $img = @imagecreatefromjpeg($source);
     if (!$img) {
         return false;

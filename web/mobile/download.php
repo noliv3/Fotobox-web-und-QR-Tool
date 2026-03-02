@@ -20,7 +20,12 @@ if ($photo === null) {
     exit;
 }
 
-$file = pathOriginals() . '/' . $photo['filename'];
+$filename = trim((string) ($photo['filename'] ?? ''));
+if ($filename === '') {
+    $filename = (string) $photo['id'] . '.jpg';
+}
+
+$file = pathOriginals() . '/' . $filename;
 if (!is_file($file)) {
     http_response_code(404);
     exit;

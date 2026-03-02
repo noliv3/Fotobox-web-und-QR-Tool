@@ -106,6 +106,7 @@ function initDb(PDO $pdo): void
         'CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)',
         'CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, created_ts INTEGER, guest_name TEXT, session_token TEXT, status TEXT, note TEXT)',
         'CREATE TABLE IF NOT EXISTS order_items (order_id INTEGER, photo_id TEXT, PRIMARY KEY(order_id, photo_id))',
+        'CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)',
         'CREATE INDEX IF NOT EXISTS photos_ts ON photos(ts)',
         'CREATE INDEX IF NOT EXISTS photos_token ON photos(token)',
         'CREATE INDEX IF NOT EXISTS print_jobs_status ON print_jobs(status)',
@@ -114,6 +115,79 @@ function initDb(PDO $pdo): void
 
     foreach ($schema as $sql) {
         $pdo->exec($sql);
+    }
+
+    ensureTableColumns($pdo, 'orders', [
+        'created_at' => 'TEXT',
+        'name' => 'TEXT',
+        'count' => 'INTEGER DEFAULT 0',
+        'shipping_enabled' => 'INTEGER DEFAULT 0',
+        'price_total' => 'REAL DEFAULT 0',
+    ]);
+    ensureTableColumns($pdo, 'photos', [
+        'fingerprint' => 'TEXT',
+    ]);
+    migratePhotoFilenameFingerprint($pdo);
+}
+
+function ensureTableColumns(PDO $pdo, string $table, array $columns): void
+{
+    $existing = [];
+    $rows = $pdo->query('PRAGMA table_info(' . $table . ')')->fetchAll();
+    foreach ($rows as $row) {
+        $existing[(string) $row['name']] = true;
+    }
+
+    foreach ($columns as $name => $definition) {
+        if (isset($existing[$name])) {
+            continue;
+        }
+        $pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $name . ' ' . $definition);
+    }
+}
+
+function migratePhotoFilenameFingerprint(PDO $pdo): void
+{
+    $rows = $pdo->query('SELECT id, filename, thumb_filename, fingerprint, deleted FROM photos WHERE deleted = 0')->fetchAll();
+    if ($rows === []) {
+        return;
+    }
+
+    $update = $pdo->prepare('UPDATE photos SET filename = :filename, thumb_filename = :thumb_filename, fingerprint = :fingerprint WHERE id = :id');
+    foreach ($rows as $row) {
+        $id = (string) ($row['id'] ?? '');
+        if ($id === '') {
+            continue;
+        }
+
+        $filename = (string) ($row['filename'] ?? '');
+        $thumbFilename = (string) ($row['thumb_filename'] ?? '');
+        $fingerprint = (string) ($row['fingerprint'] ?? '');
+        $changed = false;
+
+        $originalFile = pathOriginals() . '/' . $id . '.jpg';
+        if ($fingerprint === '' && preg_match('/^[a-f0-9]{40}$/', $filename) && is_file($originalFile)) {
+            $fingerprint = $filename;
+            $filename = $id . '.jpg';
+            $changed = true;
+        }
+
+        $thumbFile = pathThumbs() . '/' . $id . '.jpg';
+        if ($thumbFilename === '' && is_file($thumbFile)) {
+            $thumbFilename = $id . '.jpg';
+            $changed = true;
+        }
+
+        if (!$changed) {
+            continue;
+        }
+
+        $update->execute([
+            ':id' => $id,
+            ':filename' => $filename,
+            ':thumb_filename' => $thumbFilename,
+            ':fingerprint' => $fingerprint,
+        ]);
     }
 }
 
@@ -179,4 +253,149 @@ function getOpenOrder(PDO $pdo, string $sessionToken, bool $create = true): ?arr
     $created = $stmt->fetch();
 
     return is_array($created) ? $created : null;
+}
+
+function getSetting(PDO $pdo, string $key, string $default = ''): string
+{
+    $stmt = $pdo->prepare('SELECT value FROM settings WHERE key = :key LIMIT 1');
+    $stmt->execute([':key' => $key]);
+    $value = $stmt->fetchColumn();
+    if (!is_string($value)) {
+        return $default;
+    }
+    return $value;
+}
+
+function setSetting(PDO $pdo, string $key, string $value): void
+{
+    $stmt = $pdo->prepare('INSERT INTO settings(key, value) VALUES(:key, :value) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    $stmt->execute([
+        ':key' => $key,
+        ':value' => $value,
+    ]);
+}
+
+function isPrintConfigured(?array $cfg = null): bool
+{
+    $cfg = $cfg ?? config();
+    $apiKey = trim((string) ($cfg['print_api_key'] ?? ''));
+    return $apiKey !== '' && $apiKey !== 'CHANGE_ME_PRINT_API_KEY';
+}
+
+function getConfiguredPrinterName(PDO $pdo): string
+{
+    $cfgPrinter = trim((string) (config()['printer_name'] ?? ''));
+    if ($cfgPrinter !== '') {
+        return $cfgPrinter;
+    }
+    return trim(getSetting($pdo, 'printer_name', ''));
+}
+
+function isAdminEnabled(?array $cfg = null): bool
+{
+    $cfg = $cfg ?? config();
+    $code = trim((string) ($cfg['admin_code'] ?? ''));
+    return $code !== '' && $code !== 'CHANGE_ME_ADMIN_CODE';
+}
+
+function adminCodeMatches(?string $providedCode, ?array $cfg = null): bool
+{
+    $cfg = $cfg ?? config();
+    if (!isAdminEnabled($cfg)) {
+        return false;
+    }
+
+    $provided = trim((string) $providedCode);
+    $expected = trim((string) ($cfg['admin_code'] ?? ''));
+    if ($provided === '') {
+        return false;
+    }
+
+    return hash_equals($expected, $provided);
+}
+
+function requireAdminSilently(): string
+{
+    $cfg = config();
+    if (!isAdminEnabled($cfg)) {
+        header('Location: /mobile/', true, 302);
+        exit;
+    }
+
+    $providedCode = $_GET['code'] ?? ($_POST['code'] ?? '');
+    if (!is_string($providedCode) || !adminCodeMatches($providedCode, $cfg)) {
+        header('Location: /mobile/', true, 302);
+        exit;
+    }
+
+    return trim($providedCode);
+}
+
+function adminActionLog(string $action, array $context = []): void
+{
+    $line = $action;
+    if ($context !== []) {
+        $line .= ' ' . json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    $path = pathLogs() . '/admin.log';
+    ensureDir((string) dirname($path));
+    logLine($path, $line);
+}
+
+// Legacy compatibility wrappers used by import/ and older web endpoints.
+function app_config(): array
+{
+    return config();
+}
+
+function app_paths(): array
+{
+    return [
+        'root' => ROOT,
+        'data' => pathData(),
+        'watch' => (string) config()['watch_path'],
+        'originals' => pathOriginals(),
+        'thumbs' => pathThumbs(),
+        'queue' => pathQueue(),
+        'logs' => pathLogs(),
+        'db' => dbPath(),
+    ];
+}
+
+function app_pdo(): PDO
+{
+    return pdo();
+}
+
+function initialize_database(): void
+{
+    initDb(pdo());
+}
+
+function write_log(string $file, string $line): void
+{
+    ensureDir((string) dirname($file));
+    logLine($file, $line);
+}
+
+function random_token(int $bytes = 18): string
+{
+    return generateToken($bytes);
+}
+
+function validate_token(string $token): bool
+{
+    return isValidToken($token);
+}
+
+function find_photo_by_token(string $token): ?array
+{
+    return findPhotoByToken(pdo(), $token);
+}
+
+function is_photo_printable(array $photo): bool
+{
+    $windowMinutes = (int) (config()['gallery_window_minutes'] ?? 15);
+    return nowTs() - (int) ($photo['ts'] ?? 0) <= ($windowMinutes * 60);
 }

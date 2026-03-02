@@ -27,9 +27,18 @@ if ($photo === null) {
     exit;
 }
 
+$filename = trim((string) ($photo['filename'] ?? ''));
+if ($filename === '') {
+    $filename = (string) $photo['id'] . '.jpg';
+}
+$thumbFilename = trim((string) ($photo['thumb_filename'] ?? ''));
+if ($thumbFilename === '') {
+    $thumbFilename = (string) $photo['id'] . '.jpg';
+}
+
 $file = $type === 'thumb'
-    ? pathThumbs() . '/' . $photo['thumb_filename']
-    : pathOriginals() . '/' . $photo['filename'];
+    ? pathThumbs() . '/' . $thumbFilename
+    : pathOriginals() . '/' . $filename;
 
 if (!is_file($file)) {
     http_response_code(404);
