@@ -57,6 +57,18 @@ if (-not $sqliteResult.Ok) {
     exit 2
 }
 
+$zipResult = Test-ZipSupport -PhpExe $phpExe -SupervisorLog $supervisorLog -PhpLog $phpLog -PrefixArgs $phpLaunchPlan.DiagnosticPrefixArgs
+if (-not $zipResult.Ok) {
+    $state.status = 'ERROR'
+    $state.last_heartbeat = (Get-Date).ToString('s')
+    Save-PhotoboxState -Config $config -State $state
+
+    $msg = 'PHP zip extension fehlt. Start abgebrochen, kein Restart-Loop.'
+    Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
+    Write-Error $msg
+    exit 2
+}
+
 if (-not (Test-PortAvailable -Port ([int]$config.port))) {
     $msg = "Port belegt: $($config.port)"
     Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg

@@ -302,6 +302,29 @@ function Test-SqliteSupport {
     }
 }
 
+function Test-ZipSupport {
+    param(
+        [Parameter(Mandatory = $true)][string]$PhpExe,
+        [Parameter(Mandatory = $true)][string]$SupervisorLog,
+        [Parameter(Mandatory = $true)][string]$PhpLog,
+        [string[]]$PrefixArgs = @()
+    )
+
+    $zipCheckArgs = @() + $PrefixArgs + @('-r', "exit(class_exists('ZipArchive') ? 0 : 1);")
+    $zipResult = Invoke-PhpCommand -PhpExe $PhpExe -Arguments $zipCheckArgs
+    Write-PhotoboxLog -Path $PhpLog -Level 'INFO' -Message "php $($zipResult.Arguments) ExitCode=$($zipResult.ExitCode)"
+
+    if ($zipResult.ExitCode -ne 0) {
+        $message = 'PHP zip extension fehlt (ZipArchive). Start abgebrochen, kein Restart-Loop.'
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $message
+        Write-PhotoboxLog -Path $PhpLog -Level 'ERROR' -Message $message
+        return [pscustomobject]@{ Ok = $false }
+    }
+
+    Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message 'ZIP Support erkannt (ZipArchive vorhanden).'
+    return [pscustomobject]@{ Ok = $true }
+}
+
 function Test-PortAvailable {
     param([Parameter(Mandatory = $true)][int]$Port)
 

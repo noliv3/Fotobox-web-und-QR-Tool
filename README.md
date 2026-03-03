@@ -136,6 +136,8 @@ php import/print_worker.php run
 
 ## Changelog
 
+- 2026-03-03 – Mobile/ZIP-Hardening: `.menu-overlay` rendert im Hidden-State nun strikt mit `display:none` und schaltet nur sichtbar auf `display:flex`, um fehlerhafte Header-Layouts zu vermeiden. `web/mobile/download_zip.php` wurde offline-stabil gehärtet (Empty-State statt Fatal, `ZipArchive`-Check, `data/tmp`-Checks, Max-Items=200, robuste Header/Output-Buffer-Bereinigung, nur valide Originale im ZIP). `start.ps1` prüft zusätzlich fail-fast auf `ZipArchive` und bricht mit klarer Meldung bei fehlender ZIP-Extension ab.
+
 - 2026-03-03 – Mobile Header-Menüfix: Im Mobile-Header wurde das rechte „Galerie“-Textfeld vollständig entfernt und durch einen kleinen Hamburger-Button (`.menu-button`) ersetzt; der Galerie-Link bleibt ausschließlich im Overlay-Menü (`menu-panel`) erreichbar.
 
 - 2026-03-03 – Windows Print Hardening: `ops/print/printer_status.ps1`, `job_status.ps1` und `submit_job.ps1` erzwingen jetzt strikt JSON-only-Ausgabe (UTF-8 ohne BOM, stille Streams, try/catch-Fehlercodes). `submit_job.ps1` nutzt deterministisches `PrintDocument`-Fill-Scaling auf `MarginBounds`, setzt eindeutige `DocumentName`s (`photobox_job_<jobid>_<unix>`) und pollt die Spool-`jobId` bis zu 10x/200ms (`JOB_ID_NOT_FOUND` bei Timeout). `import/print_worker.php` ruft PowerShell mit `-NonInteractive` via getrennten stdout/stderr-Pipes auf, behandelt JSON-Parsefehler als `PS_JSON_INVALID` ohne Fatal, und drosselt stderr-Logs auf Statuswechsel/Fingerprint statt Logflood.
