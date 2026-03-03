@@ -148,6 +148,9 @@ try {
 
         $pending = Get-PendingPrintJobsCount -PhpExe $phpExe -Config $config
         Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "Print Queue Pending: $pending"
+        if ($pending -gt 0) {
+            Invoke-PrintWorkerRun -PhpExe $phpExe -Config $config -SupervisorLog $supervisorLog
+        }
 
         $idleMinutes = [int]$config.camera_idle_minutes
         if ($idleMinutes -lt 1) { $idleMinutes = 30 }

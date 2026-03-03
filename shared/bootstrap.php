@@ -314,21 +314,92 @@ function adminCodeMatches(?string $providedCode, ?array $cfg = null): bool
     return hash_equals($expected, $provided);
 }
 
+
+function createPrintTicket(string $photoId): string
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        throw new RuntimeException('print_ticket_requires_active_session');
+    }
+
+    if (!isset($_SESSION['print_tickets']) || !is_array($_SESSION['print_tickets'])) {
+        $_SESSION['print_tickets'] = [];
+    }
+
+    $token = generateToken(24);
+    $_SESSION['print_tickets'][$token] = [
+        'photo_id' => $photoId,
+        'expires_ts' => nowTs() + 300,
+    ];
+
+    foreach ($_SESSION['print_tickets'] as $key => $ticket) {
+        $expires = (int) (($ticket['expires_ts'] ?? 0));
+        if ($expires <= nowTs()) {
+            unset($_SESSION['print_tickets'][$key]);
+        }
+    }
+
+    return $token;
+}
+
+function consumePrintTicket(string $token, string $photoId): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+
+    $tickets = $_SESSION['print_tickets'] ?? [];
+    if (!is_array($tickets) || !isset($tickets[$token]) || !is_array($tickets[$token])) {
+        return false;
+    }
+
+    $ticket = $tickets[$token];
+    unset($_SESSION['print_tickets'][$token]);
+
+    $ticketPhotoId = (string) ($ticket['photo_id'] ?? '');
+    $expiresTs = (int) ($ticket['expires_ts'] ?? 0);
+
+    if ($ticketPhotoId === '' || $ticketPhotoId !== $photoId) {
+        return false;
+    }
+
+    return $expiresTs > nowTs();
+}
+
 function requireAdminSilently(): string
 {
     $cfg = config();
+
+    session_name('pb_admin');
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    if (isset($_SESSION['pb_admin_ok']) && $_SESSION['pb_admin_ok'] === true) {
+        return 'session';
+    }
+
     if (!isAdminEnabled($cfg)) {
         header('Location: /mobile/', true, 302);
         exit;
     }
 
-    $providedCode = $_GET['code'] ?? ($_POST['code'] ?? '');
-    if (!is_string($providedCode) || !adminCodeMatches($providedCode, $cfg)) {
-        header('Location: /mobile/', true, 302);
-        exit;
+    $providedCode = $_POST['code'] ?? ($_GET['code'] ?? '');
+    if (is_string($providedCode) && adminCodeMatches($providedCode, $cfg)) {
+        $_SESSION['pb_admin_ok'] = true;
+        session_regenerate_id(true);
+        return 'code';
     }
 
-    return trim($providedCode);
+    $providedPassword = $_POST['password'] ?? '';
+    $hash = trim((string) ($cfg['admin_password_hash'] ?? ''));
+    if (is_string($providedPassword) && $providedPassword !== '' && $hash !== '' && $hash !== 'CHANGE_ME' && password_verify($providedPassword, $hash)) {
+        $_SESSION['pb_admin_ok'] = true;
+        session_regenerate_id(true);
+        return 'password';
+    }
+
+    header('Location: /mobile/', true, 302);
+    exit;
 }
 
 function adminActionLog(string $action, array $context = []): void

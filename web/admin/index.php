@@ -7,10 +7,17 @@ require_once __DIR__ . '/../../shared/bootstrap.php';
 noCacheHeaders();
 noIndexHeaders();
 
-$code = requireAdminSilently();
+requireAdminSilently();
+$csrfToken = getCsrfToken();
 $pdo = pdo();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (!verifyCsrfToken((string) ($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        echo 'forbidden';
+        exit;
+    }
+
     $action = (string) ($_POST['action'] ?? '');
     if ($action === 'retry_job') {
         $jobId = (int) ($_POST['job_id'] ?? 0);
@@ -19,7 +26,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $stmt->execute([':id' => $jobId]);
             adminActionLog('retry_job', ['id' => $jobId]);
         }
-        header('Location: /admin/?code=' . urlencode($code) . '&tab=jobs', true, 302);
+        header('Location: /admin/?tab=jobs', true, 302);
         exit;
     }
 }
@@ -45,10 +52,10 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
 <main class="container">
     <h1>Admin</h1>
     <nav class="tabs">
-        <a class="<?= $tab === 'jobs' ? 'is-active' : '' ?>" href="/admin/?code=<?= urlencode($code) ?>&amp;tab=jobs">Druckauftraege</a>
-        <a class="<?= $tab === 'orders' ? 'is-active' : '' ?>" href="/admin/?code=<?= urlencode($code) ?>&amp;tab=orders">Bestellungen</a>
-        <a class="<?= $tab === 'photos' ? 'is-active' : '' ?>" href="/admin/?code=<?= urlencode($code) ?>&amp;tab=photos">Bilder</a>
-        <a class="<?= $tab === 'printer' ? 'is-active' : '' ?>" href="/admin/?code=<?= urlencode($code) ?>&amp;tab=printer">Drucker</a>
+        <a class="<?= $tab === 'jobs' ? 'is-active' : '' ?>" href="/admin/?tab=jobs">Druckauftraege</a>
+        <a class="<?= $tab === 'orders' ? 'is-active' : '' ?>" href="/admin/?tab=orders">Bestellungen</a>
+        <a class="<?= $tab === 'photos' ? 'is-active' : '' ?>" href="/admin/?tab=photos">Bilder</a>
+        <a class="<?= $tab === 'printer' ? 'is-active' : '' ?>" href="/admin/?tab=printer">Drucker</a>
     </nav>
 
     <?php if ($tab === 'jobs'): ?>
@@ -66,7 +73,7 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
                         <td>
                             <?php if ((string) $job['status'] === 'error'): ?>
                                 <form method="post" class="inline">
-                                    <input type="hidden" name="code" value="<?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                     <input type="hidden" name="action" value="retry_job">
                                     <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
                                     <button type="submit">Retry</button>
@@ -104,7 +111,7 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
                     <article class="tile" data-photo-id="<?= htmlspecialchars((string) $photo['id'], ENT_QUOTES, 'UTF-8') ?>">
                         <img src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto">
                         <p><?= date('d.m. H:i', (int) $photo['ts']) ?></p>
-                        <p><button class="danger" type="button" data-delete-photo data-code="<?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?>">Loeschen</button></p>
+                        <p><button class="danger" type="button" data-delete-photo data-csrf-token="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">Loeschen</button></p>
                     </article>
                 <?php endforeach; ?>
             </div>
@@ -114,9 +121,8 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
             <div class="inline">
                 <label for="printer-select">Drucker</label>
                 <select id="printer-select"></select>
-                <button type="button" id="save-printer" data-code="<?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?>">Speichern</button>
+                <button type="button" id="save-printer" data-csrf-token="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">Speichern</button>
             </div>
-            <p class="muted" id="printer-status"></p>
         </section>
     <?php endif; ?>
 </main>
@@ -129,9 +135,9 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
       const tile = btn.closest('[data-photo-id]');
       if (!tile) return;
       const id = tile.getAttribute('data-photo-id');
-      const code = btn.getAttribute('data-code') || '';
-      const body = new URLSearchParams({ id, code });
-      fetch('/admin/api_delete_photo.php?code=' + encodeURIComponent(code), {
+      const csrfToken = btn.getAttribute('data-csrf-token') || '';
+      const body = new URLSearchParams({ id, csrf_token: csrfToken });
+      fetch('/admin/api_delete_photo.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
         body
@@ -143,11 +149,9 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
 
   const select = document.getElementById('printer-select');
   const save = document.getElementById('save-printer');
-  const status = document.getElementById('printer-status');
-  if (!select || !save || !status) return;
+  if (!select || !save) return;
 
-  const code = save.getAttribute('data-code') || '';
-  fetch('/admin/api_printers.php?code=' + encodeURIComponent(code))
+  fetch('/admin/api_printers.php')
     .then((r) => r.json())
     .then((res) => {
       if (!res || !res.ok) return;
@@ -166,13 +170,12 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
     });
 
   save.addEventListener('click', () => {
-    const body = new URLSearchParams({ code, name: select.value || '' });
-    fetch('/admin/api_printers.php?code=' + encodeURIComponent(code), {
+    const csrfToken = save.getAttribute('data-csrf-token') || '';
+    const body = new URLSearchParams({ name: select.value || '', csrf_token: csrfToken });
+    fetch('/admin/api_printers.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
       body
-    }).then((r) => r.json()).then((res) => {
-      if (res && res.ok) status.textContent = 'Gespeichert';
     });
   });
 })();

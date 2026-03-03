@@ -61,6 +61,7 @@
 - ingest-file: `php import/import_service.php ingest-file <path>`
 - cleanup: `php import/import_service.php cleanup`
 - print worker: `php import/print_worker.php run`
+- print worker daemon: `php import/print_worker.php run-loop [sleep_seconds]`
 
 ## Datenbank-Schema
 ### 2026-02-27 – SQLite `data/queue/photobox.sqlite`
@@ -209,6 +210,7 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+- 2026-03-03 – Security/Ops-Update: Print-Auth auf Session-gebundene CSRF- + Print-Ticket-Validierung umgestellt (kein Print-Secret im Client). Admin nutzt Session-Gating (Code/Passwort beim Einstieg, danach Session), mutierende Admin-/Order-POSTs prüfen CSRF. Admin-Fotolöschung verwendet nun Retention-kompatibel `photos.deleted=1` + Datei-Delete statt Hard-Delete. Supervisor startet bei Pending-Queue automatisch `print_worker.php run`; `import/print_worker.php` unterstützt zusätzlich `run-loop` für Daemon-Betrieb. Öffentliche Galerie zeigt keine Print-Konfigurations-/Fehlerdetails mehr; Galerie-Styles auf Mobile-Look vereinheitlicht.
 - 2026-03-01 – Final Spec v1.0 integriert: Mobile-Routing `view=recent|all|favs` mit einheitlichem Layout/Toast/Long-Press/Undo, Session-Merkliste-API erweitert (`add|remove|toggle|list`), ZIP-Download und neuer Bestellabschluss (`order_done`) implementiert. Gallery ist read-only Statusseite; neuer `/admin/`-Bereich mit stillem Code-Gating, Tabs (Jobs/Bestellungen/Bilder/Drucker), Printer-Settings (`settings.printer_name`) und gezieltem Action-Logging (`admin.log`).
 - 2026-03-01 – PHP-Bootstrap-Kompatibilität ergänzt: Legacy-Aufrufe (`app_config`, `app_paths`, `app_pdo`, `write_log`, `random_token`, `validate_token`, `find_photo_by_token`, `is_photo_printable`, `initialize_database`) werden wieder zentral in `shared/bootstrap.php` bereitgestellt, damit Import/Print/Web-Endpunkte konsistent funktionieren.
 - 2026-03-01 – Import robust ohne GD: `import/import_service.php` nutzt bei fehlender GD-Funktion `imagecreatefromjpeg` einen Fallback und erstellt das Thumbnail als Kopie des Originals statt mit Fatal Error abzubrechen.

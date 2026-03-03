@@ -10,6 +10,7 @@ noIndexHeaders();
 
 session_name('pb_mobile');
 session_start();
+$csrfToken = getCsrfToken();
 if (!isset($_SESSION['favs']) || !is_array($_SESSION['favs'])) {
     $_SESSION['favs'] = [];
 }
@@ -25,6 +26,18 @@ if ($favIds !== []) {
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (!verifyCsrfToken((string) ($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        $content = '<div class="empty-state"><p>Ungueltige Anfrage</p><p><a href="/mobile/order.php">Zurueck</a></p></div>';
+        mobileRenderLayout([
+            'title' => 'Bestellung',
+            'status_line' => 'Bestellung',
+            'active_view' => 'favs',
+            'content_html' => $content,
+        ]);
+        exit;
+    }
+
     $name = sanitizeGuestName((string) ($_POST['name'] ?? ''));
     $shippingEnabled = (($_POST['shipping_enabled'] ?? '') === '1');
 
@@ -81,6 +94,7 @@ if ($photos === []) {
 } else {
     ?>
     <form method="post" class="panel">
+        <input type="hidden" name="csrf_token" value="<?= mobileEsc($csrfToken) ?>">
         <label for="name">Name</label>
         <input id="name" name="name" type="text" maxlength="80" required>
 

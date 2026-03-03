@@ -719,6 +719,30 @@ function Stop-PhotoboxWatcher {
     }
 }
 
+
+function Invoke-PrintWorkerRun {
+    param(
+        [Parameter(Mandatory = $true)][string]$PhpExe,
+        [Parameter(Mandatory = $true)][pscustomobject]$Config,
+        [Parameter(Mandatory = $true)][string]$SupervisorLog
+    )
+
+    try {
+        $result = & $PhpExe (Join-Path $Config.repo_root 'import/print_worker.php') 'run' 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-PhotoboxLog -Path $SupervisorLog -Level 'WARN' -Message "print_worker.php run ExitCode=$LASTEXITCODE"
+            return
+        }
+
+        $text = (($result | ForEach-Object { [string]$_ }) -join ' | ').Trim()
+        if ($text -ne '') {
+            Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message ("PrintWorker: {0}" -f $text)
+        }
+    } catch {
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'WARN' -Message ("print_worker.php run Fehler: {0}" -f $_.Exception.Message)
+    }
+}
+
 function Get-PendingPrintJobsCount {
     param(
         [Parameter(Mandatory = $true)][string]$PhpExe,
