@@ -96,7 +96,7 @@
   - Request: `POST t`, optional `guest_name`
   - Response: `{orderId:int,itemsCount:int}`
   - Fehlerfälle: `400 invalid_token`, `404 photo_not_found`
-  - Security: Token-Validierung, Name-Sanitizing, session-basierte Zuordnung
+  - Security: Token-Validierung, Name-Sanitizing, session-basierte Zuordnung, CSRF-Header-Prüfung (`X-CSRF-Token`) für POST
   - Privacy: speichert nur `guest_name` und Session-Token
   - Status/ToDo: stabiler MVP-Umfang (implementiert)
 
@@ -196,6 +196,11 @@
 - Unsichere Defaults (unauth endpoints, direkte Dateipfade)
 - Hardcoding von Secrets
 
+## Annahmen
+### 2026-03-03 – Admin-Härtung im Event-LAN
+- Annahme: Im geschlossenen Hochzeits-LAN wird auf zusätzliche harte Admin-Auth-Mechanismen (MFA/VPN/externe IAM) verzichtet.
+- Begründung: Offline-first Betrieb mit geringer Komplexität vor Ort; bestehendes Session-Gating bleibt als pragmatischer Basisschutz aktiv.
+
 ## Decision Log
 - 2026-02-27 – Entscheidung: Zeitfenster-Galerie statt Vollgalerie.
   - Kontext: Eventgalerien benötigen einfachen Zugriff für Gäste, aber begrenzte Sichtbarkeit aus Datenschutz- und Übersichtsgründen.
@@ -210,6 +215,8 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+
+- 2026-03-03 – Mobile/CSRF-Refactor: Neue `initMobileSession()` zentralisiert `pb_mobile`-Sessionstart, Favoriten-Init und CSRF-Token-Init. Mobile-Views nutzen den zentralen Aufruf statt redundanter Session-Blöcke. `_layout.php` injiziert CSRF-Meta-Tag, `web/mobile/app.js` sendet `X-CSRF-Token` bei POST und behandelt HTTP-Fehler robust vor JSON-Parsing; `api_mark.php` bricht bei fehlendem/ungültigem Header mit `403` ab.
 - 2026-03-03 – Security/Ops-Update: Print-Auth auf Session-gebundene CSRF- + Print-Ticket-Validierung umgestellt (kein Print-Secret im Client). Admin nutzt Session-Gating (Code/Passwort beim Einstieg, danach Session), mutierende Admin-/Order-POSTs prüfen CSRF. Admin-Fotolöschung verwendet nun Retention-kompatibel `photos.deleted=1` + Datei-Delete statt Hard-Delete. Supervisor startet bei Pending-Queue automatisch `print_worker.php run`; `import/print_worker.php` unterstützt zusätzlich `run-loop` für Daemon-Betrieb. Öffentliche Galerie zeigt keine Print-Konfigurations-/Fehlerdetails mehr; Galerie-Styles auf Mobile-Look vereinheitlicht.
 - 2026-03-01 – Final Spec v1.0 integriert: Mobile-Routing `view=recent|all|favs` mit einheitlichem Layout/Toast/Long-Press/Undo, Session-Merkliste-API erweitert (`add|remove|toggle|list`), ZIP-Download und neuer Bestellabschluss (`order_done`) implementiert. Gallery ist read-only Statusseite; neuer `/admin/`-Bereich mit stillem Code-Gating, Tabs (Jobs/Bestellungen/Bilder/Drucker), Printer-Settings (`settings.printer_name`) und gezieltem Action-Logging (`admin.log`).
 - 2026-03-01 – PHP-Bootstrap-Kompatibilität ergänzt: Legacy-Aufrufe (`app_config`, `app_paths`, `app_pdo`, `write_log`, `random_token`, `validate_token`, `find_photo_by_token`, `is_photo_printable`, `initialize_database`) werden wieder zentral in `shared/bootstrap.php` bereitgestellt, damit Import/Print/Web-Endpunkte konsistent funktionieren.

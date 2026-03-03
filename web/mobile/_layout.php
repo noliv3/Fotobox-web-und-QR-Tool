@@ -15,6 +15,7 @@ function mobileRenderLayout(array $params): void
     $statusLine = (string) ($params['status_line'] ?? '');
     $activeView = (string) ($params['active_view'] ?? 'recent');
     $contentHtml = (string) ($params['content_html'] ?? '');
+    $csrfToken = getCsrfToken();
 
     $impressumExists = is_file(ROOT . '/web/impressum.php') || is_file(ROOT . '/web/impressum/index.php');
     ?>
@@ -25,6 +26,7 @@ function mobileRenderLayout(array $params): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= mobileEsc($title) ?></title>
         <link rel="stylesheet" href="/mobile/style.css">
+        <meta name="csrf-token" content="<?= mobileEsc($csrfToken) ?>">
     </head>
     <body>
     <div class="mobile-shell">

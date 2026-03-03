@@ -8,13 +8,23 @@
   let pressTarget = null;
 
   function postForm(url, payload) {
+    const csrfMeta = document.querySelector('meta[name=\"csrf-token\"]');
+    const csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '').trim() : '';
     const body = new URLSearchParams(payload);
     return fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'X-CSRF-Token': csrfToken
+      },
       body,
       credentials: 'same-origin'
-    }).then((r) => r.json().catch(() => ({ ok: false })));
+    }).then((r) => {
+      if (!r.ok) {
+        throw new Error('HTTP ' + r.status);
+      }
+      return r.json();
+    }).catch(() => ({ ok: false }));
   }
 
   function showToast(message, options = {}) {

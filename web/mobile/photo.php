@@ -8,12 +8,8 @@ require_once __DIR__ . '/_layout.php';
 noCacheHeaders();
 noIndexHeaders();
 
-session_name('pb_mobile');
-session_start();
+initMobileSession();
 $csrfToken = getCsrfToken();
-if (!isset($_SESSION['favs']) || !is_array($_SESSION['favs'])) {
-    $_SESSION['favs'] = [];
-}
 
 $pdo = pdo();
 $photoId = trim((string) ($_GET['id'] ?? ''));

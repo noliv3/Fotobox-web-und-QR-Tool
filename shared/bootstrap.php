@@ -291,6 +291,58 @@ function getConfiguredPrinterName(PDO $pdo): string
     return trim(getSetting($pdo, 'printer_name', ''));
 }
 
+
+function initMobileSession(): void
+{
+    session_name('pb_mobile');
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    if (!isset($_SESSION['favs']) || !is_array($_SESSION['favs'])) {
+        $_SESSION['favs'] = [];
+    }
+
+    $csrfToken = $_SESSION['csrf_token'] ?? '';
+    if (!is_string($csrfToken) || !preg_match('/^[a-f0-9]{32,128}$/', $csrfToken)) {
+        $_SESSION['csrf_token'] = random_token(32);
+    }
+}
+
+function getCsrfToken(): string
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        throw new RuntimeException('csrf_requires_active_session');
+    }
+
+    $token = $_SESSION['csrf_token'] ?? '';
+    if (!is_string($token) || !preg_match('/^[a-f0-9]{32,128}$/', $token)) {
+        $token = random_token(32);
+        $_SESSION['csrf_token'] = $token;
+    }
+
+    return $token;
+}
+
+function verifyCsrfToken(?string $provided): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+
+    $expected = $_SESSION['csrf_token'] ?? '';
+    if (!is_string($expected) || $expected === '') {
+        return false;
+    }
+
+    $provided = is_string($provided) ? trim($provided) : '';
+    if ($provided === '') {
+        return false;
+    }
+
+    return hash_equals($expected, $provided);
+}
+
 function isAdminEnabled(?array $cfg = null): bool
 {
     $cfg = $cfg ?? config();
