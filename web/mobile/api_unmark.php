@@ -6,11 +6,26 @@ require_once __DIR__ . '/../../shared/bootstrap.php';
 
 noCacheHeaders();
 noIndexHeaders();
-requirePost();
+initMobileSession();
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    responseJson(['error' => 'method_not_allowed'], 405);
+}
 
 $pdo = pdo();
-$token = $_POST['t'] ?? '';
-if (!is_string($token) || !isValidToken($token)) {
+$cfg = config();
+$rateKey = 'rl_unmark_' . getClientIp();
+if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['rate_limit_window_seconds'])) {
+    responseJson(['error' => 'rate_limited'], 429);
+}
+
+$csrfHeader = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+if (!verifyCsrfToken($csrfHeader)) {
+    responseJson(['error' => 'forbidden'], 403);
+}
+
+$token = (string) ($_POST['t'] ?? '');
+if (!isValidToken($token)) {
     responseJson(['error' => 'invalid_token'], 400);
 }
 
@@ -19,18 +34,6 @@ if ($photo === null) {
     responseJson(['error' => 'photo_not_found'], 404);
 }
 
-$sessionToken = getOrCreateSessionToken();
-$order = getOpenOrder($pdo, $sessionToken, false);
-if ($order === null) {
-    responseJson(['itemsCount' => 0]);
-}
+unset($_SESSION['favs'][(string) $photo['id']]);
 
-$pdo->prepare('DELETE FROM order_items WHERE order_id = :orderId AND photo_id = :photoId')->execute([
-    ':orderId' => $order['id'],
-    ':photoId' => $photo['id'],
-]);
-
-$countStmt = $pdo->prepare('SELECT COUNT(*) FROM order_items WHERE order_id = :orderId');
-$countStmt->execute([':orderId' => $order['id']]);
-
-responseJson(['itemsCount' => (int) $countStmt->fetchColumn()]);
+responseJson(['itemsCount' => count($_SESSION['favs'])]);

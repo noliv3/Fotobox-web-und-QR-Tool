@@ -48,7 +48,7 @@ if (!in_array($tab, ['jobs', 'orders', 'photos', 'printer'], true)) {
 }
 
 $jobs = $pdo->query('SELECT j.id, j.photo_id, j.status, j.error, j.created_ts, p.id AS photo_exists FROM print_jobs j LEFT JOIN photos p ON p.id = j.photo_id ORDER BY j.id DESC LIMIT 120')->fetchAll();
-$orders = $pdo->query('SELECT id, created_at, name, count, shipping_enabled, price_total, status FROM orders ORDER BY id DESC LIMIT 120')->fetchAll();
+$orders = $pdo->query('SELECT id, created_at, name, email, photo_count, shipping_enabled, price_cents, status, zip_path FROM orders ORDER BY id DESC LIMIT 120')->fetchAll();
 $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 240')->fetchAll();
 ?>
 <!doctype html>
@@ -99,16 +99,24 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
     <?php elseif ($tab === 'orders'): ?>
         <section class="panel">
             <table>
-                <thead><tr><th>ID</th><th>Zeit</th><th>Name</th><th>Count</th><th>Versand</th><th>Preis</th><th>Status</th><th>Aktion</th></tr></thead>
+                <thead><tr><th>ID</th><th>Zeit</th><th>Name</th><th>E-Mail</th><th>Count</th><th>Versand</th><th>Preis</th><th>ZIP</th><th>Status</th><th>Aktion</th></tr></thead>
                 <tbody>
                 <?php foreach ($orders as $order): ?>
                     <tr>
                         <td>#<?= (int) $order['id'] ?></td>
                         <td><?= htmlspecialchars((string) ($order['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                         <td><?= htmlspecialchars((string) ($order['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
-                        <td><?= (int) ($order['count'] ?? 0) ?></td>
+                        <td><?= htmlspecialchars((string) ($order['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= (int) ($order['photo_count'] ?? 0) ?></td>
                         <td><?= ((int) ($order['shipping_enabled'] ?? 0)) === 1 ? 'ja' : 'nein' ?></td>
-                        <td><?= number_format((float) ($order['price_total'] ?? 0), 2, ',', '.') ?> EUR</td>
+                        <td><?= number_format(((int) ($order['price_cents'] ?? 0)) / 100, 2, ',', '.') ?> EUR</td>
+                        <td>
+                            <?php if (trim((string) ($order['zip_path'] ?? '')) !== ''): ?>
+                                <a href="/admin/download_order_zip.php?id=<?= (int) $order['id'] ?>">ZIP</a>
+                            <?php else: ?>
+                                -
+                            <?php endif; ?>
+                        </td>
                         <td><?= htmlspecialchars((string) ($order['status'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                         <td>
                             <?php if ((string) ($order['status'] ?? '') !== 'done'): ?>

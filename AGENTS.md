@@ -45,6 +45,9 @@
 ### 2026-02-27 – Import-Modi
 - `import_mode`: `watch_folder` (Default) oder `sd_card`
 - `sd_card_path`: Pfad zur SD-Karte (z. B. `F:\DCIM`), wird bei `import_mode=sd_card` rekursiv überwacht
+- `paypal_me_base_url`: Basis-URL für Zahlungslink (z. B. `https://paypal.me/DEINNAME`)
+- `order_zip_dir`: Zielpfad für Admin-Bestell-ZIPs (Default `data/orders`)
+- `order_max_age_hours`: Maximalalter markierter Fotos für gültige Bestellung (Default `24`)
 
 ## Kommandos
 ### 2026-02-27 – Verfügbare Befehle
@@ -70,6 +73,7 @@
 3) `kv(key TEXT PRIMARY KEY, value TEXT)`
 4) `orders(id INTEGER PRIMARY KEY AUTOINCREMENT, created_ts INTEGER, guest_name TEXT, session_token TEXT, status TEXT, note TEXT)`
 5) `order_items(order_id INTEGER, photo_id TEXT, PRIMARY KEY(order_id, photo_id))`
+6) `orders` enthält zusätzlich (idempotent migriert) Felder für Final-Flow: `created_at`, `name`, `email`, `shipping_enabled`, `addr_street`, `addr_zip`, `addr_city`, `addr_country`, `photo_count`, `price_cents`, `paypal_url`, `pay_status`, `order_token`, `zip_path`
 
 ## API-Endpunkte
 ### 2026-02-27 – Mobile API Dokumentation
@@ -139,6 +143,26 @@
   - Security: Token-Auflösung ausschließlich über DB
 
 
+- Endpoint: `/mobile/order.php`
+  - Zweck: Bestellformular + serverseitiger Checkout aus Session-Merkliste
+  - Request: `GET|POST`, CSRF-geschütztes Formular (`csrf_token`)
+  - Response: HTML-Form, Fehlseiten bei Validierungsfehlern (kein JSON), Redirect auf `/mobile/order_done.php?o=<order_token>` bei Erfolg
+  - Validierung: Name+E-Mail immer Pflicht; Versand erzwingt Straße+Nr, PLZ, Ort, Land; 24h-Regel über Foto-`ts` (`order_max_age_hours`)
+  - Side Effects: persistiert `orders`/`order_items`, erzeugt optional ZIP unter `order_zip_dir` (bei verfügbarem `ZipArchive`)
+
+- Endpoint: `/mobile/order_done.php`
+  - Zweck: Abschlussseite per `order_token` mit Preis/Versandstatus und PayPal-Infos
+  - Request: `GET o`
+  - Response: HTML mit Bestellnummer, Betrag, QR-Render (`/mobile/qr.php?d=...`) und Offline-Hinweisen
+  - Fehlerfälle: Fallback-Seite „Bestellung nicht gefunden“
+
+- Endpoint: `/mobile/qr.php`
+  - Zweck: PNG-QR-/Codebild für Zahlungs-URL
+  - Request: `GET d`
+  - Response: `image/png` mit `no-store`
+  - Fehlerfälle: `400 missing_data`
+
+
 - Endpoint: `/gallery/`
   - Zweck: Öffentliche read-only Monitoransicht ohne Login
   - Request: `GET`
@@ -197,6 +221,10 @@
 - Hardcoding von Secrets
 
 ## Annahmen
+### 2026-03-03 – Order-Items photo_id Typ im Legacy-Schema
+- Annahme: `photos.id` bleibt im Bestand `TEXT`; daher schreibt der Final-Bestellflow `order_items.photo_id` weiterhin textuell kompatibel (SQLite-affin), obwohl frühere Entwürfe `INTEGER` nennen.
+- Begründung: Verhindert Breaking-Migrationen/Datentypkonflikte im laufenden MVP und hält bestehende Referenzen stabil.
+
 ### 2026-03-03 – Admin-Härtung im Event-LAN
 - Annahme: Im geschlossenen Hochzeits-LAN wird auf zusätzliche harte Admin-Auth-Mechanismen (MFA/VPN/externe IAM) verzichtet.
 - Begründung: Offline-first Betrieb mit geringer Komplexität vor Ort; bestehendes Session-Gating bleibt als pragmatischer Basisschutz aktiv.
@@ -215,6 +243,8 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+
+- 2026-03-03 – Bestellwesen Final: `web/mobile/order.php` wurde auf vollständigen HTML-Checkout mit Pflichtvalidierung (Name+E-Mail, Versandadresse), 24h-Regel, cent-genauer Preislogik, `order_token`-Redirect und optionaler ZIP-Erzeugung pro Bestellung (`order_zip_dir`) umgestellt. `web/mobile/order_done.php` zeigt Token-basiert PayPal-Link, QR-Bild und Offline-/24h-Hinweise. `web/admin/download_order_zip.php` ergänzt Admin-only ZIP-Download. `api_order_name.php` und `api_unmark.php` erzwingen jetzt `initMobileSession()` + CSRF-Header + Rate-Limit.
 
 - 2026-03-03 – Mobile/ZIP-Hardening: `.menu-overlay` rendert im Hidden-State nun strikt mit `display:none` und schaltet nur sichtbar auf `display:flex`, um fehlerhafte Header-Layouts zu vermeiden. `web/mobile/download_zip.php` wurde offline-stabil gehärtet (Empty-State statt Fatal, `ZipArchive`-Check, `data/tmp`-Checks, Max-Items=200, robuste Header/Output-Buffer-Bereinigung, nur valide Originale im ZIP). `start.ps1` prüft zusätzlich fail-fast auf `ZipArchive` und bricht mit klarer Meldung bei fehlender ZIP-Extension ab.
 

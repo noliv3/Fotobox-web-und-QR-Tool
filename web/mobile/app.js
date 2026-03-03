@@ -220,6 +220,28 @@
     });
   }
 
+
+  function bindOrderForm() {
+    const form = document.querySelector('[data-order-form]');
+    if (!form) return;
+
+    const toggle = form.querySelector('[data-shipping-toggle]');
+    const fields = form.querySelector('[data-shipping-fields]');
+    if (!toggle || !fields) return;
+
+    const inputs = fields.querySelectorAll('input');
+    const update = () => {
+      const enabled = !!toggle.checked;
+      fields.hidden = !enabled;
+      inputs.forEach((input) => {
+        input.required = enabled;
+      });
+    };
+
+    toggle.addEventListener('change', update);
+    update();
+  }
+
   function bindFavButtons() {
     document.querySelectorAll('[data-fav-toggle]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -260,6 +282,7 @@
   bindMenu();
   bindFavButtons();
   bindPrintForms();
+  bindOrderForm();
   document.querySelectorAll('[data-photo-tile]').forEach(bindTileLongPress);
 
   window.showToast = showToast;
