@@ -121,6 +121,11 @@ php import/print_worker.php run
 ## Datenfluss
 `watch_path` -> Import (`/data/originals`) -> Thumbnail (`/data/thumbs`) -> SQLite-Index (`/data/queue/photobox.sqlite`) -> Web-Ausgabe (Token-URLs) -> optional Druckqueue -> Cleanup nach Retention.
 
+## Annahmen
+### 2026-03-03 – Admin-Härtung im Hochzeitsbetrieb
+- Annahme: Für den geschlossenen Hochzeits-LAN-Betrieb wird bewusst auf zusätzliche "harte" Admin-Auth-Schichten (z. B. MFA, VPN oder externe IAM-Systeme) verzichtet.
+- Begründung: Das System bleibt offline-first und lokal bedienbar; die bestehende Session-basierte Admin-Absicherung bleibt aktiv, um versehentliche Änderungen abzufangen, ohne den Ablauf vor Ort unnötig zu verkomplizieren.
+
 ## Sicherheit & Datenschutz (MVP)
 - Keine direkten Dateipfade nach außen; nur tokenbasierte URLs (`t=...`).
 - Druck nur im Zeitfenster (`gallery_window_minutes`) erlaubt.
@@ -130,6 +135,8 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+
+- 2026-03-03 – Mobile/CSRF-Update: Mobile-Session-Initialisierung auf `initMobileSession()` zentralisiert (`pb_mobile`, Favoriten-Init, CSRF-Token-Init). Mobile-Layout enthält CSRF-Meta-Tag, `app.js` sendet `X-CSRF-Token` bei jedem POST und behandelt HTTP-Fehler robust vor JSON-Parsing. `api_mark.php` validiert CSRF-Header mit 403 bei fehlendem/ungültigem Token.
 - 2026-03-03 – Security/Ops-Update: Print-Auth von Client-Secret auf Session-CSRF + kurzlebiges Print-Ticket umgestellt (kein `print_api_key` mehr im HTML), Admin auf Session-Auth fixiert und mutierende Admin-/Bestell-POSTs um CSRF erweitert. Admin-Bildlöschung vereinheitlicht auf Datei-Delete + `photos.deleted=1` (kein Hard-Delete). Supervisor triggert jetzt bei Pending-Jobs automatisch `import/print_worker.php run`; zusätzlich unterstützt der Worker `run-loop` für Dauerbetrieb. Galerie-UI farblich auf Mobile-Design vereinheitlicht und öffentliche Print-Status/Fehleranzeige entfernt.
 - 2026-03-01 – Final Spec v1.0 umgesetzt: Mobile auf zentrales Layout mit Tabs/Overlay/Footer + Toast/Long-Press/Undo umgestellt, Session-Merkliste via `api_mark.php` (add/remove/toggle/list), Detailseite/ZIP/Bestellfluss erneuert, Gallery auf read-only Statusseite reduziert und neuer stiller `/admin/`-Bereich mit Jobs/Bestellungen/Bildern/Drucker-Settings (inkl. Printer-Erkennung und Action-Logging) hinzugefuegt.
 - 2026-03-01 – Kompatibilitätsfix im Bootstrap: Legacy-Funktionsnamen für Import/Print/ältere Endpunkte werden wieder unterstützt (`app_*`, `write_log`, Token-/Photo-Helfer), sodass Watcher-`ingest-file` nicht mehr mit `undefined function app_paths()` abbricht.

@@ -7,12 +7,7 @@ require_once __DIR__ . '/../../shared/bootstrap.php';
 noCacheHeaders();
 noIndexHeaders();
 
-session_name('pb_mobile');
-session_start();
-
-if (!isset($_SESSION['favs']) || !is_array($_SESSION['favs'])) {
-    $_SESSION['favs'] = [];
-}
+initMobileSession();
 
 $pdo = pdo();
 $cfg = config();
@@ -30,6 +25,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && isset($_GET['list'])) {
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     responseJson(['ok' => false], 405);
+}
+
+$csrfHeader = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+if (!verifyCsrfToken($csrfHeader)) {
+    responseJson(['ok' => false], 403);
 }
 
 $action = (string) ($_POST['action'] ?? '');

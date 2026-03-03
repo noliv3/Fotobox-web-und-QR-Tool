@@ -8,6 +8,8 @@ require_once __DIR__ . '/_layout.php';
 noCacheHeaders();
 noIndexHeaders();
 
+initMobileSession();
+
 $pdo = pdo();
 $orderId = (int) ($_GET['id'] ?? 0);
 

@@ -5,7 +5,7 @@ body {
   background: #f3f5f9;
   color: #1d2733;
 }
-a { color: #0e4ca8; }
+a { color: #0f4fa8; }
 
 .container {
   width: min(980px, 100%);
@@ -13,7 +13,10 @@ a { color: #0e4ca8; }
   padding: .95rem;
 }
 
-h1, h2 { margin: 0 0 .7rem; }
+h1, h2 {
+  margin: 0 0 .7rem;
+  color: #1d2733;
+}
 
 .panel {
   background: #fff;
@@ -21,6 +24,16 @@ h1, h2 { margin: 0 0 .7rem; }
   border-radius: 11px;
   padding: .8rem;
   margin-bottom: .9rem;
+}
+
+button, .button {
+  border: 0;
+  border-radius: 8px;
+  background: #0f4fa8;
+  color: #fff;
+  padding: .55rem .8rem;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .photo-grid {

@@ -118,38 +118,3 @@ function logLine(string $file, string $line): void
     $prefix = '[' . date('c') . '] ';
     file_put_contents($file, $prefix . $line . PHP_EOL, FILE_APPEND | LOCK_EX);
 }
-
-function getCsrfToken(): string
-{
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        throw new RuntimeException('csrf_requires_active_session');
-    }
-
-    $token = $_SESSION['csrf_token'] ?? '';
-    if (is_string($token) && preg_match('/^[a-f0-9]{32,128}$/', $token)) {
-        return $token;
-    }
-
-    $token = generateToken(24);
-    $_SESSION['csrf_token'] = $token;
-    return $token;
-}
-
-function verifyCsrfToken(?string $provided): bool
-{
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        return false;
-    }
-
-    $expected = $_SESSION['csrf_token'] ?? '';
-    if (!is_string($expected) || $expected === '') {
-        return false;
-    }
-
-    $provided = is_string($provided) ? trim($provided) : '';
-    if ($provided === '') {
-        return false;
-    }
-
-    return hash_equals($expected, $provided);
-}
