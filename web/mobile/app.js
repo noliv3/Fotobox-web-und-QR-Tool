@@ -179,6 +179,43 @@
     });
   }
 
+
+  function bindPrintForms() {
+    document.querySelectorAll('[data-print-form]').forEach((form) => {
+      form.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const body = new URLSearchParams(new FormData(form));
+        fetch('/mobile/api_print.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+          },
+          body,
+          credentials: 'same-origin'
+        }).then((res) => {
+          if (!res.ok) {
+            return res.json().catch(() => ({})).then((payload) => ({ ok: false, status: res.status, payload }));
+          }
+          return res.json().then((payload) => ({ ok: true, payload }));
+        }).then((result) => {
+          if (result.ok && result.payload && result.payload.ok === true) {
+            showToast('In Warteschlange');
+            return;
+          }
+          const errorCode = (result.payload && result.payload.error) || '';
+          if (errorCode === 'queue_full') {
+            showToast('Warteschlange voll');
+            return;
+          }
+          showToast('Druck derzeit nicht möglich');
+        }).catch(() => {
+          showToast('Druck derzeit nicht möglich');
+        });
+      });
+    });
+  }
+
   function bindFavButtons() {
     document.querySelectorAll('[data-fav-toggle]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -218,6 +255,7 @@
 
   bindMenu();
   bindFavButtons();
+  bindPrintForms();
   document.querySelectorAll('[data-photo-tile]').forEach(bindTileLongPress);
 
   window.showToast = showToast;

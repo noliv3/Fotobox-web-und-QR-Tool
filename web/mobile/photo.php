@@ -51,7 +51,7 @@ if ($photo === null) {
     <div class="panel actions">
         <a class="button" href="/mobile/download.php?t=<?= urlencode((string) $photo['token']) ?>">Download</a>
         <?php if ($printable && $printConfigured): ?>
-            <form method="post" action="/mobile/api_print.php" class="actions" style="margin:0;">
+            <form method="post" action="/mobile/api_print.php" class="actions" style="margin:0;" data-print-form>
                 <input type="hidden" name="t" value="<?= mobileEsc((string) $photo['token']) ?>">
                 <input type="hidden" name="csrf_token" value="<?= mobileEsc($csrfToken) ?>">
                 <input type="hidden" name="print_ticket" value="<?= mobileEsc($printTicket) ?>">

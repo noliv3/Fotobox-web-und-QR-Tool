@@ -59,6 +59,11 @@ function pathLogs(): string
     return pathData() . '/logs';
 }
 
+function pathPrintfiles(): string
+{
+    return pathData() . '/printfiles';
+}
+
 function dbPath(): string
 {
     return pathQueue() . '/photobox.sqlite';
@@ -72,6 +77,7 @@ function ensureAppDirs(): void
     ensureDir(pathThumbs());
     ensureDir(pathQueue());
     ensureDir(pathLogs());
+    ensureDir(pathPrintfiles());
 }
 
 function pdo(): PDO
@@ -130,7 +136,7 @@ function initDb(PDO $pdo): void
 {
     $schema = [
         'CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, ts INTEGER, filename TEXT, token TEXT UNIQUE, thumb_filename TEXT, deleted INTEGER DEFAULT 0)',
-        'CREATE TABLE IF NOT EXISTS print_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, photo_id TEXT, created_ts INTEGER, status TEXT, error TEXT NULL)',
+        'CREATE TABLE IF NOT EXISTS print_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, photo_id TEXT, created_ts INTEGER, status TEXT NOT NULL DEFAULT "queued", error TEXT NULL)',
         'CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)',
         'CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, created_ts INTEGER, guest_name TEXT, session_token TEXT, status TEXT, note TEXT)',
         'CREATE TABLE IF NOT EXISTS order_items (order_id INTEGER, photo_id TEXT, PRIMARY KEY(order_id, photo_id))',
@@ -145,6 +151,8 @@ function initDb(PDO $pdo): void
         $pdo->exec($sql);
     }
 
+    ensurePrintSchema($pdo);
+
     ensureTableColumns($pdo, 'orders', [
         'created_at' => 'TEXT',
         'name' => 'TEXT',
@@ -156,6 +164,51 @@ function initDb(PDO $pdo): void
         'fingerprint' => 'TEXT',
     ]);
     migratePhotoFilenameFingerprint($pdo);
+}
+
+function ensurePrintSchema(PDO $pdo): void
+{
+    ensureTableColumns($pdo, 'print_jobs', [
+        'status' => "TEXT NOT NULL DEFAULT 'queued'",
+        'spool_job_id' => 'INTEGER NULL',
+        'document_name' => 'TEXT NULL',
+        'attempts' => 'INTEGER NOT NULL DEFAULT 0',
+        'last_error' => 'TEXT NULL',
+        'last_error_at' => 'INTEGER NULL',
+        'next_retry_at' => 'INTEGER NULL',
+        'printfile_path' => 'TEXT NULL',
+        'updated_at' => 'INTEGER NOT NULL DEFAULT 0',
+    ]);
+
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_print_jobs_status_nextretry ON print_jobs(status, next_retry_at)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_print_jobs_spool ON print_jobs(spool_job_id)');
+
+    $pdo->exec("UPDATE print_jobs SET status = 'queued' WHERE status IS NULL OR status = '' OR status = 'pending'");
+    $pdo->exec("UPDATE print_jobs SET last_error = error WHERE last_error IS NULL AND error IS NOT NULL AND trim(error) != ''");
+    $pdo->exec("UPDATE print_jobs SET attempts = 0 WHERE attempts IS NULL");
+    $pdo->exec("UPDATE print_jobs SET updated_at = COALESCE(updated_at, created_ts, strftime('%s','now')) WHERE updated_at IS NULL OR updated_at = 0");
+}
+
+function printBackoffSeconds(int $attempts): int
+{
+    $step = max(0, min($attempts - 1, 5));
+    return min(300, 10 * (2 ** $step));
+}
+
+function createPrintfileForJob(string $photoId, int $jobId): ?string
+{
+    $source = pathOriginals() . '/' . $photoId . '.jpg';
+    if (!is_file($source)) {
+        return null;
+    }
+
+    ensureDir(pathPrintfiles());
+    $target = pathPrintfiles() . '/' . $jobId . '.jpg';
+    if (!@copy($source, $target)) {
+        return null;
+    }
+
+    return $target;
 }
 
 function ensureTableColumns(PDO $pdo, string $table, array $columns): void
@@ -510,6 +563,7 @@ function app_paths(): array
         'thumbs' => pathThumbs(),
         'queue' => pathQueue(),
         'logs' => pathLogs(),
+        'printfiles' => pathPrintfiles(),
         'db' => dbPath(),
     ];
 }

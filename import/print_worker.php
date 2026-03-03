@@ -19,100 +19,280 @@ if ($command === 'run-loop') {
 }
 
 do {
-    $processed = process_next_job();
+    run_worker_once();
     if ($command === 'run-loop') {
         sleep($sleepSeconds);
     }
 } while ($command === 'run-loop');
 
-function process_next_job(): bool
+function run_worker_once(): void
 {
     $pdo = app_pdo();
-    $paths = app_paths();
-    $log = $paths['logs'] . '/print_worker.log';
+    $log = app_paths()['logs'] . '/print_worker.log';
+    write_log($log, 'worker_run_start');
 
-    $jobStmt = $pdo->query("SELECT * FROM print_jobs WHERE status = 'pending' ORDER BY created_ts ASC, id ASC LIMIT 1");
-    $job = $jobStmt->fetch();
-
-    if (!$job) {
-        write_log($log, 'Kein pending Job vorhanden');
-        return false;
-    }
-
-    $photoStmt = $pdo->prepare('SELECT * FROM photos WHERE id = :id AND deleted = 0 LIMIT 1');
-    $photoStmt->execute(['id' => $job['photo_id']]);
-    $photo = $photoStmt->fetch();
-
-    if (!$photo) {
-        set_job_status((int) $job['id'], 'error', 'PHOTO_NOT_FOUND');
-        write_log($log, 'Job ' . $job['id'] . ' Fehler: PHOTO_NOT_FOUND');
-        return true;
-    }
-
-    if (!is_photo_printable($photo)) {
-        set_job_status((int) $job['id'], 'error', 'OUTSIDE_PRINT_WINDOW');
-        write_log($log, 'Job ' . $job['id'] . ' Fehler: OUTSIDE_PRINT_WINDOW');
-        return true;
-    }
-
-    $imagePath = $paths['originals'] . '/' . $photo['id'] . '.jpg';
-    if (!is_file($imagePath)) {
-        set_job_status((int) $job['id'], 'error', 'PHOTO_FILE_MISSING');
-        write_log($log, 'Job ' . $job['id'] . ' Fehler: PHOTO_FILE_MISSING');
-        return true;
-    }
-
-    set_job_status((int) $job['id'], 'printing', null);
-
-    if (PHP_OS_FAMILY === 'Windows') {
-        set_job_status((int) $job['id'], 'error', 'NOT_IMPLEMENTED_WINDOWS_PRINT');
-        write_log($log, 'Job ' . $job['id'] . ' beendet mit error: NOT_IMPLEMENTED_WINDOWS_PRINT');
-        return true;
-    }
-
-    $printerCommand = command_exists('lp') ? 'lp' : (command_exists('lpr') ? 'lpr' : '');
-    if ($printerCommand === '') {
-        set_job_status((int) $job['id'], 'error', 'NO_SYSTEM_SPOOLER');
-        write_log($log, 'Job ' . $job['id'] . ' beendet mit error: NO_SYSTEM_SPOOLER');
-        return true;
+    if (PHP_OS_FAMILY !== 'Windows') {
+        write_log($log, 'worker_run_stop platform_not_supported');
+        return;
     }
 
     $printerName = getConfiguredPrinterName($pdo);
-    $printerOption = '';
-    if ($printerName !== '') {
-        $printerOption = $printerCommand === 'lp'
-            ? (' -d ' . escapeshellarg($printerName))
-            : (' -P ' . escapeshellarg($printerName));
+    if ($printerName === '') {
+        write_log($log, 'worker_run_stop printer_not_configured');
+        return;
     }
 
-    $cmd = $printerCommand . $printerOption . ' ' . escapeshellarg($imagePath) . ' 2>&1';
-    exec($cmd, $output, $code);
-
-    if ($code === 0) {
-        set_job_status((int) $job['id'], 'done', null);
-        write_log($log, 'Job ' . $job['id'] . ' gedruckt');
-        return true;
+    if (!isSpoolerRunning()) {
+        write_log($log, 'worker_run_stop spooler_not_running');
+        return;
     }
 
-    $error = trim(implode(' | ', $output));
-    set_job_status((int) $job['id'], 'error', $error !== '' ? mb_substr($error, 0, 400) : 'PRINT_COMMAND_FAILED');
-    write_log($log, 'Job ' . $job['id'] . ' Fehler beim Drucken');
-    return true;
+    $printerStatus = getPrinterStatus($printerName);
+    if (!(bool) ($printerStatus['ok'] ?? false)) {
+        write_log($log, 'worker_run_stop printer_not_found');
+        return;
+    }
+
+    pollSpooledJob($pdo, $printerName, $log);
+
+    $online = (bool) ($printerStatus['online'] ?? false);
+    $paused = (bool) ($printerStatus['paused'] ?? false);
+    $errorState = trim((string) ($printerStatus['errorState'] ?? ''));
+    $queueCount = (int) ($printerStatus['queueCount'] ?? 0);
+
+    if (!$online || $paused || $errorState !== '') {
+        write_log($log, 'worker_run_stop printer_needs_attention');
+        return;
+    }
+
+    if ($queueCount > 0) {
+        write_log($log, 'worker_run_stop backpressure queue=' . $queueCount);
+        return;
+    }
+
+    submitNextQueuedJob($pdo, $printerName, $log);
+    write_log($log, 'worker_run_stop');
 }
 
-function set_job_status(int $id, string $status, ?string $error): void
+function pollSpooledJob(PDO $pdo, string $printerName, string $log): void
 {
-    $stmt = app_pdo()->prepare('UPDATE print_jobs SET status = :status, error = :error WHERE id = :id');
+    $stmt = $pdo->query("SELECT * FROM print_jobs WHERE status = 'spooled' AND spool_job_id IS NOT NULL ORDER BY created_ts ASC, id ASC LIMIT 1");
+    $job = $stmt->fetch();
+    if (!is_array($job)) {
+        return;
+    }
+
+    $spoolId = (int) $job['spool_job_id'];
+    $status = getSpoolJobStatus($printerName, $spoolId);
+    if (!(bool) ($status['ok'] ?? false)) {
+        return;
+    }
+
+    if (!(bool) ($status['exists'] ?? false)) {
+        updateJobState($pdo, $job, [
+            'status' => 'queued',
+            'spool_job_id' => null,
+            'attempts' => ((int) $job['attempts']) + 1,
+            'last_error' => 'SPOOL_JOB_MISSING',
+            'last_error_at' => nowTs(),
+            'next_retry_at' => nowTs() + 30,
+            'document_name' => null,
+        ], $log);
+        return;
+    }
+
+    $state = strtolower(trim((string) ($status['state'] ?? '')));
+    $flags = $status['flags'] ?? [];
+    if (!is_array($flags)) {
+        $flags = [];
+    }
+    $flagsText = strtolower(implode(' ', array_map('strval', $flags)));
+
+    if ($state === 'completed' || $state === 'printed') {
+        updateJobState($pdo, $job, [
+            'status' => 'done',
+            'last_error' => null,
+            'next_retry_at' => null,
+        ], $log);
+        return;
+    }
+
+    $error = '';
+    if (str_contains($flagsText, 'paperout') || str_contains($flagsText, 'paper out')) {
+        $error = 'PAPER_OUT';
+    } elseif (str_contains($flagsText, 'offline')) {
+        $error = 'OFFLINE';
+    } elseif (str_contains($flagsText, 'paused')) {
+        $error = 'PAUSED';
+    } elseif (str_contains($flagsText, 'error')) {
+        $error = 'PRINTER_ERROR';
+    }
+
+    if ($error !== '') {
+        updateJobState($pdo, $job, [
+            'status' => 'needs_attention',
+            'last_error' => $error,
+            'last_error_at' => nowTs(),
+            'next_retry_at' => nowTs() + 60,
+        ], $log);
+        return;
+    }
+
+    if (in_array($state, ['printing', 'spooling', 'retained'], true)) {
+        updateJobState($pdo, $job, [
+            'status' => 'spooled',
+        ], $log);
+    }
+}
+
+function submitNextQueuedJob(PDO $pdo, string $printerName, string $log): void
+{
+    $now = nowTs();
+    $stmt = $pdo->prepare("SELECT * FROM print_jobs WHERE status = 'queued' AND (next_retry_at IS NULL OR next_retry_at <= :now) ORDER BY created_ts ASC, id ASC LIMIT 1");
+    $stmt->execute([':now' => $now]);
+    $job = $stmt->fetch();
+    if (!is_array($job)) {
+        return;
+    }
+
+    $printfilePath = trim((string) ($job['printfile_path'] ?? ''));
+    if ($printfilePath === '' || !is_file($printfilePath)) {
+        updateJobState($pdo, $job, [
+            'status' => 'failed_hard',
+            'last_error' => 'PRINTFILE_MISSING',
+            'last_error_at' => $now,
+            'next_retry_at' => null,
+        ], $log);
+        return;
+    }
+
+    updateJobState($pdo, $job, [
+        'status' => 'sending',
+    ], $log);
+
+    $documentName = 'photobox_job_' . (int) $job['id'];
+    $submit = submitSpoolJob($printerName, $printfilePath, $documentName);
+
+    if ((bool) ($submit['ok'] ?? false) && (int) ($submit['jobId'] ?? 0) > 0) {
+        updateJobState($pdo, $job, [
+            'status' => 'spooled',
+            'spool_job_id' => (int) $submit['jobId'],
+            'document_name' => $documentName,
+            'last_error' => null,
+            'last_error_at' => null,
+            'next_retry_at' => null,
+        ], $log);
+        return;
+    }
+
+    $errorCode = trim((string) ($submit['error'] ?? 'SUBMIT_FAILED'));
+    $attempts = ((int) $job['attempts']) + 1;
+    $next = $now + printBackoffSeconds($attempts);
+    $targetStatus = in_array($errorCode, ['PAPER_OUT', 'OFFLINE', 'PAUSED', 'PRINTER_ERROR', 'SPOOLER_STOPPED'], true)
+        ? 'needs_attention'
+        : 'queued';
+
+    updateJobState($pdo, $job, [
+        'status' => $targetStatus,
+        'attempts' => $attempts,
+        'last_error' => $errorCode,
+        'last_error_at' => $now,
+        'next_retry_at' => $next,
+        'spool_job_id' => null,
+    ], $log);
+}
+
+function updateJobState(PDO $pdo, array $job, array $updates, string $log): void
+{
+    $current = [
+        'id' => (int) $job['id'],
+        'status' => (string) ($job['status'] ?? ''),
+        'attempts' => (int) ($job['attempts'] ?? 0),
+        'last_error' => $job['last_error'] !== null ? (string) $job['last_error'] : null,
+        'spool_job_id' => $job['spool_job_id'] !== null ? (int) $job['spool_job_id'] : null,
+        'document_name' => $job['document_name'] !== null ? (string) $job['document_name'] : null,
+        'last_error_at' => $job['last_error_at'] !== null ? (int) $job['last_error_at'] : null,
+        'next_retry_at' => $job['next_retry_at'] !== null ? (int) $job['next_retry_at'] : null,
+    ];
+
+    $new = array_merge($current, $updates);
+    $new['updated_at'] = nowTs();
+
+    $stmt = $pdo->prepare(
+        'UPDATE print_jobs SET status=:status, attempts=:attempts, last_error=:last_error, last_error_at=:last_error_at, '
+        . 'next_retry_at=:next_retry_at, spool_job_id=:spool_job_id, document_name=:document_name, updated_at=:updated_at '
+        . 'WHERE id=:id'
+    );
     $stmt->execute([
-        'id' => $id,
-        'status' => $status,
-        'error' => $error,
+        ':id' => $new['id'],
+        ':status' => $new['status'],
+        ':attempts' => $new['attempts'],
+        ':last_error' => $new['last_error'],
+        ':last_error_at' => $new['last_error_at'],
+        ':next_retry_at' => $new['next_retry_at'],
+        ':spool_job_id' => $new['spool_job_id'],
+        ':document_name' => $new['document_name'],
+        ':updated_at' => $new['updated_at'],
     ]);
+
+    if ($current['status'] !== $new['status']) {
+        write_log($log, 'job ' . $new['id'] . ' status ' . $current['status'] . '->' . $new['status']);
+    }
+    if ($new['last_error'] !== null && $new['last_error'] !== '' && $current['last_error'] !== $new['last_error']) {
+        write_log($log, 'job ' . $new['id'] . ' error ' . $new['last_error']);
+    }
 }
 
-function command_exists(string $command): bool
+function runPsJson(array $args): array
 {
-    $which = PHP_OS_FAMILY === 'Windows' ? 'where' : 'command -v';
-    $result = shell_exec($which . ' ' . escapeshellarg($command) . ' 2>/dev/null');
-    return is_string($result) && trim($result) !== '';
+    $base = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'];
+    $command = array_merge($base, $args);
+    $parts = array_map('escapeshellarg', $command);
+    $cmd = implode(' ', $parts) . ' 2>&1';
+
+    exec($cmd, $output, $code);
+    if ($code !== 0) {
+        return ['ok' => false, 'error' => 'POWERSHELL_EXEC_FAILED'];
+    }
+
+    $raw = trim(implode("\n", $output));
+    if ($raw === '') {
+        return ['ok' => false, 'error' => 'POWERSHELL_EMPTY_RESPONSE'];
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return ['ok' => false, 'error' => 'POWERSHELL_INVALID_JSON'];
+    }
+
+    return $decoded;
+}
+
+function isSpoolerRunning(): bool
+{
+    $status = runPsJson([ROOT . '/ops/print/printer_status.ps1', '-PrinterName', '__spooler_probe__']);
+    return (bool) ($status['spoolerRunning'] ?? false);
+}
+
+function getPrinterStatus(string $printerName): array
+{
+    return runPsJson([ROOT . '/ops/print/printer_status.ps1', '-PrinterName', $printerName]);
+}
+
+function getSpoolJobStatus(string $printerName, int $jobId): array
+{
+    return runPsJson([ROOT . '/ops/print/job_status.ps1', '-PrinterName', $printerName, '-JobId', (string) $jobId]);
+}
+
+function submitSpoolJob(string $printerName, string $file, string $documentName): array
+{
+    return runPsJson([
+        ROOT . '/ops/print/submit_job.ps1',
+        '-PrinterName',
+        $printerName,
+        '-File',
+        $file,
+        '-DocumentName',
+        $documentName,
+    ]);
 }
