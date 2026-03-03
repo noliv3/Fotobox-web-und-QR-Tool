@@ -58,9 +58,13 @@ if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
 }
 
 foreach ($rows as $row) {
-    $photoId = (string) $row['id'];
-    $originalPath = pathOriginals() . '/' . $photoId . '.jpg';
-    if (is_file($originalPath)) {
+    $photoId = basename((string) $row['id']);
+    if ($photoId === '' || $photoId === '.' || $photoId === '..') {
+        continue;
+    }
+
+    $originalPath = resolvePathInDirectory(pathOriginals(), $photoId . '.jpg');
+    if ($originalPath !== null) {
         $zip->addFile($originalPath, $photoId . '.jpg');
     }
 }

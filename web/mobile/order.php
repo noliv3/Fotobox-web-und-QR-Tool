@@ -13,6 +13,11 @@ $csrfToken = getCsrfToken();
 
 $pdo = pdo();
 $favIds = array_values(array_keys($_SESSION['favs']));
+if ($favIds === []) {
+    header('Location: /mobile/', true, 302);
+    exit;
+}
+
 $photos = [];
 if ($favIds !== []) {
     $placeholders = implode(',', array_fill(0, count($favIds), '?'));

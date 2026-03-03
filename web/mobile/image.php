@@ -37,10 +37,10 @@ if ($thumbFilename === '') {
 }
 
 $file = $type === 'thumb'
-    ? pathThumbs() . '/' . $thumbFilename
-    : pathOriginals() . '/' . $filename;
+    ? resolvePathInDirectory(pathThumbs(), $thumbFilename)
+    : resolvePathInDirectory(pathOriginals(), $filename);
 
-if (!is_file($file)) {
+if ($file === null) {
     http_response_code(404);
     exit;
 }
