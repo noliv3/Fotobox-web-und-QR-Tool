@@ -46,7 +46,7 @@ Wichtige Schlüssel:
 - `print_api_key`
 - `paypal_me_base_url` (z. B. `https://paypal.me/DEINNAME`)
 - `order_zip_dir` (Default: `data/orders`)
-- `order_max_age_hours` (Default: `24`)
+- `order_max_age_hours` (legacy, aktuell ohne Wirkung auf Bestellfreigabe)
 - `admin_password_hash` (`CHANGE_ME` = Admin deaktiviert)
 - `rate_limit_max`, `rate_limit_window_seconds`
 
@@ -138,6 +138,7 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+- 2026-03-03 – Korrektur Bestelllogik + Mobile-Performance: Die 24h-Altersgrenze für Bestellungen wurde entfernt (Bestellungen sind nicht mehr vom Fotoalter abhängig). Mobile-Grid nutzt Lazy-Loading (`loading="lazy"`, `decoding="async"`, `fetchpriority="low"`) mit stabiler 1:1-Thumbnail-Geometrie. „Alle“ zeigt strikt alle nicht gelöschten Fotos (`deleted=0`, Sortierung nach `created_at DESC`), „Neu“ filtert nur nach Zeitfenster und nicht nach Druckstatus. Bildendpunkte liefern jetzt aggressive Byte-Caches (`public, max-age=31536000, immutable`) mit `ETag`/`Last-Modified`/`304`, während HTML weiterhin `no-store` bleibt. Foto-Detail und Download unterstützen stabile `id`-Links (Token nur noch kompatibler Alias).
 
 - 2026-03-03 – Bestellwesen Final: `web/mobile/order.php` validiert jetzt Name+E-Mail (und bei Versand vollstaendige Adresse), erzwingt die 24h-Regel auf Basis der Foto-Zeitstempel, speichert Bestellungen mit `order_token`/`price_cents`/`paypal_url` und erzeugt pro Bestellung ein Admin-ZIP unter `data/orders/<order_id>/order_<order_id>.zip` (wenn `ZipArchive` verfuegbar). `web/mobile/order_done.php` nutzt Token-Lookup und zeigt PayPal-Abschnitt inkl. QR-Bild (`/mobile/qr.php`) + Offline-Hinweis. Admin-Bereich zeigt ZIP-Link (`/admin/download_order_zip.php`) nur intern; Legacy-APIs (`api_order_name.php`, `api_unmark.php`) wurden auf Session+CSRF+Rate-Limit gehaertet.
 - 2026-03-03 – Mobile/ZIP-Hardening: `.menu-overlay` rendert im Hidden-State nun strikt mit `display:none` und schaltet nur sichtbar auf `display:flex`, um fehlerhafte Header-Layouts zu vermeiden. `web/mobile/download_zip.php` wurde offline-stabil gehärtet (Empty-State statt Fatal, `ZipArchive`-Check, `data/tmp`-Checks, Max-Items=200, robuste Header/Output-Buffer-Bereinigung, nur valide Originale im ZIP). `start.ps1` prüft zusätzlich fail-fast auf `ZipArchive` und bricht mit klarer Meldung bei fehlender ZIP-Extension ab.

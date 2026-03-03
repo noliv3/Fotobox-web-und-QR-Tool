@@ -30,26 +30,26 @@ if ($view === 'recent') {
         $toTs = $targetTs + 600;
         $statusLine = 'Von ' . date('H:i', $fromTs) . ' bis ' . date('H:i', $toTs);
 
-        $stmt = $pdo->prepare('SELECT id, token, ts FROM photos WHERE deleted = 0 AND ts BETWEEN :fromTs AND :toTs ORDER BY ts DESC LIMIT 240');
+        $stmt = $pdo->prepare('SELECT id, token, ts, created_at FROM photos WHERE deleted = 0 AND created_at BETWEEN :fromTs AND :toTs ORDER BY created_at DESC LIMIT 240');
         $stmt->execute([':fromTs' => $fromTs, ':toTs' => $toTs]);
         $photos = $stmt->fetchAll();
     } else {
         $minTs = $now - ($windowMinutes * 60);
         $statusLine = 'Letzte ' . $windowMinutes . ' Minuten';
 
-        $stmt = $pdo->prepare('SELECT id, token, ts FROM photos WHERE deleted = 0 AND ts >= :minTs ORDER BY ts DESC LIMIT 240');
+        $stmt = $pdo->prepare('SELECT id, token, ts, created_at FROM photos WHERE deleted = 0 AND created_at >= :minTs ORDER BY created_at DESC LIMIT 240');
         $stmt->execute([':minTs' => $minTs]);
         $photos = $stmt->fetchAll();
     }
 } elseif ($view === 'all') {
     $statusLine = 'Alle Fotos';
-    $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 600')->fetchAll();
+    $photos = $pdo->query('SELECT id, token, ts, created_at FROM photos WHERE deleted = 0 ORDER BY created_at DESC LIMIT 600')->fetchAll();
 } else {
     $statusLine = 'Merkliste';
     $favIds = array_keys($_SESSION['favs']);
     if ($favIds !== []) {
         $placeholders = implode(',', array_fill(0, count($favIds), '?'));
-        $stmt = $pdo->prepare('SELECT id, token, ts FROM photos WHERE deleted = 0 AND id IN (' . $placeholders . ') ORDER BY ts DESC');
+        $stmt = $pdo->prepare('SELECT id, token, ts, created_at FROM photos WHERE deleted = 0 AND id IN (' . $placeholders . ') ORDER BY created_at DESC');
         $stmt->execute($favIds);
         $photos = $stmt->fetchAll();
     }
@@ -88,7 +88,8 @@ if ($photos === []) {
         <?php foreach ($photos as $photo): ?>
             <?php
             $isFav = isset($_SESSION['favs'][(string) $photo['id']]);
-            $isNew = ($now - (int) $photo['ts']) <= ($windowMinutes * 60);
+            $photoCreatedAt = (int) ($photo['created_at'] ?? $photo['ts'] ?? 0);
+            $isNew = ($now - $photoCreatedAt) <= ($windowMinutes * 60);
             ?>
             <article class="tile <?= $isFav ? 'is-fav' : '' ?>" data-photo-tile data-photo-id="<?= mobileEsc((string) $photo['id']) ?>">
                 <?php if ($isNew): ?>
@@ -108,7 +109,7 @@ if ($photos === []) {
                     </span>
                 <?php endif; ?>
                 <a class="tile-link" href="/mobile/photo.php?id=<?= urlencode((string) $photo['id']) ?>">
-                    <img src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto" loading="lazy">
+                    <img src="/mobile/image.php?id=<?= urlencode((string) $photo['id']) ?>&amp;type=thumb" alt="Foto" loading="lazy" decoding="async" fetchpriority="low">
                     <time><?= date('d.m. H:i', (int) $photo['ts']) ?></time>
                 </a>
                 <?php if ($view === 'favs'): ?>

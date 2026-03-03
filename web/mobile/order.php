@@ -90,15 +90,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         orderErrorPage('Unvollstaendige Versanddaten', 'Fuer Versand werden Strasse+Nr, PLZ, Ort und Land benoetigt.');
     }
 
-    $maxAgeHours = max(1, (int) ($cfg['order_max_age_hours'] ?? 24));
-    $maxAgeSeconds = $maxAgeHours * 3600;
-    $oldestAllowedTs = nowTs() - $maxAgeSeconds;
-    foreach ($photos as $photo) {
-        if ((int) ($photo['ts'] ?? 0) < $oldestAllowedTs) {
-            orderErrorPage('Bestellung nicht mehr moeglich', 'Mindestens ein Bild ist aelter als ' . $maxAgeHours . ' Stunden.');
-        }
-    }
-
     $photoCount = count($photos);
     $priceCents = orderPriceCents($photoCount, $shippingEnabled);
     $orderToken = bin2hex(random_bytes(16));
@@ -225,7 +216,7 @@ if ($photos === []) {
             <p>Bis 9 Fotos: 1,00 EUR/Fotos, ab 10 Fotos: 0,50 EUR/Fotos, Versand +3,00 EUR.</p>
             <p>Abholung der Bilder beim Brautpaar oder Versand durch Brautpaar moeglich.</p>
             <p>Bestellungen werden nur mit vollstaendiger Adresse + E-Mail erfuellt.</p>
-            <p>Nachtraegliche Aenderungen sind nur innerhalb von <?= (int) ($cfg['order_max_age_hours'] ?? 24) ?> Stunden moeglich.</p>
+            <p>Fotos werden nach dem Event fuer Nachbestellungen bereitgestellt. Die Verfuegbarkeit endet nur durch Retention-Loeschung.</p>
         </div>
 
         <button type="submit">Bestellen</button>
@@ -235,7 +226,7 @@ if ($photos === []) {
         <?php foreach ($photos as $photo): ?>
             <article class="tile" data-photo-id="<?= orderEsc((string) $photo['id']) ?>">
                 <a class="tile-link" href="/mobile/photo.php?id=<?= urlencode((string) $photo['id']) ?>">
-                    <img src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto" loading="lazy">
+                    <img src="/mobile/image.php?id=<?= urlencode((string) $photo['id']) ?>&amp;type=thumb" alt="Foto" loading="lazy" decoding="async" fetchpriority="low">
                     <time><?= date('d.m. H:i', (int) $photo['ts']) ?></time>
                 </a>
             </article>

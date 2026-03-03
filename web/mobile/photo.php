@@ -16,14 +16,14 @@ $photoId = trim((string) ($_GET['id'] ?? ''));
 $photoToken = trim((string) ($_GET['t'] ?? ''));
 $photo = null;
 if ($photoId !== '') {
-    $stmt = $pdo->prepare('SELECT id, token, ts FROM photos WHERE id = :id AND deleted = 0 LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, token, ts, filename FROM photos WHERE id = :id AND deleted = 0 LIMIT 1');
     $stmt->execute([':id' => $photoId]);
     $row = $stmt->fetch();
     if (is_array($row)) {
         $photo = $row;
     }
 } elseif ($photoToken !== '' && isValidToken($photoToken)) {
-    $stmt = $pdo->prepare('SELECT id, token, ts FROM photos WHERE token = :token AND deleted = 0 LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, token, ts, filename FROM photos WHERE token = :token AND deleted = 0 LIMIT 1');
     $stmt->execute([':token' => $photoToken]);
     $row = $stmt->fetch();
     if (is_array($row)) {
@@ -40,16 +40,30 @@ if ($photo === null) {
     </div>
     <?php
 } else {
-    $cfg = config();
+    $filename = trim((string) ($photo['filename'] ?? ''));
+    if ($filename === '') {
+        $filename = (string) $photo['id'] . '.jpg';
+    }
+    $originalFile = resolvePathInDirectory(pathOriginals(), $filename);
+    if ($originalFile === null) {
+        ?>
+        <div class="empty-state">
+            <p>Datei fehlt</p>
+            <p>Das Foto ist indexiert, aber die Bilddatei ist aktuell nicht verfuegbar.</p>
+            <p><a href="/mobile/?view=all">Zu Alle</a></p>
+        </div>
+        <?php
+    } else {
+        $cfg = config();
     $printable = is_photo_printable($photo);
     $printConfigured = isPrintConfigured($cfg);
     $isFav = isset($_SESSION['favs'][(string) $photo['id']]);
     $printTicket = createPrintTicket((string) $photo['id']);
     ?>
-    <img class="detail-image" src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=original" alt="Foto">
+    <img class="detail-image" src="/mobile/image.php?id=<?= urlencode((string) $photo['id']) ?>&amp;type=original" alt="Foto">
     <div class="panel muted">Aufnahme: <?= date('d.m.Y H:i:s', (int) $photo['ts']) ?></div>
     <div class="panel actions">
-        <a class="button" href="/mobile/download.php?t=<?= urlencode((string) $photo['token']) ?>">Download</a>
+        <a class="button" href="/mobile/download.php?id=<?= urlencode((string) $photo['id']) ?>">Download</a>
         <?php if ($printable && $printConfigured): ?>
             <form method="post" action="/mobile/api_print.php" class="actions" style="margin:0;" data-print-form>
                 <input type="hidden" name="t" value="<?= mobileEsc((string) $photo['token']) ?>">
@@ -61,6 +75,7 @@ if ($photo === null) {
         <button type="button" data-fav-toggle data-photo-id="<?= mobileEsc((string) $photo['id']) ?>"><?= $isFav ? 'Gemerkt' : 'Merken' ?></button>
     </div>
     <?php
+    }
 }
 $content = (string) ob_get_clean();
 

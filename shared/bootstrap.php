@@ -174,7 +174,9 @@ function initDb(PDO $pdo): void
     ]);
     ensureTableColumns($pdo, 'photos', [
         'fingerprint' => 'TEXT',
+        'created_at' => 'INTEGER',
     ]);
+    $pdo->exec("UPDATE photos SET created_at = COALESCE(created_at, ts, strftime('%s','now')) WHERE created_at IS NULL OR created_at = 0");
     migratePhotoFilenameFingerprint($pdo);
 }
 
@@ -336,9 +338,66 @@ function noCacheHeaders(): void
     header('Expires: 0');
 }
 
+
 function noIndexHeaders(): void
 {
     header('X-Robots-Tag: noindex, nofollow, noarchive');
+}
+
+function sendFileCached(string $path, string $mime, ?string $downloadName = null): void
+{
+    if (!is_file($path)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $mtime = filemtime($path);
+    if ($mtime === false) {
+        $mtime = nowTs();
+    }
+    $size = filesize($path);
+    if ($size === false) {
+        $size = 0;
+    }
+
+    $etag = '"' . sha1($path . '|' . (string) $mtime . '|' . (string) $size) . '"';
+    $ifNoneMatch = trim((string) ($_SERVER['HTTP_IF_NONE_MATCH'] ?? ''));
+
+    if ($ifNoneMatch !== '') {
+        $candidates = array_map('trim', explode(',', $ifNoneMatch));
+        foreach ($candidates as $candidate) {
+            if ($candidate === $etag || $candidate === 'W/' . $etag) {
+                header('Cache-Control: public, max-age=31536000, immutable');
+                header('ETag: ' . $etag);
+                header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+                http_response_code(304);
+                exit;
+            }
+        }
+    }
+
+    $ifModifiedSince = trim((string) ($_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? ''));
+    if ($ifModifiedSince !== '') {
+        $ifModifiedSinceTs = strtotime($ifModifiedSince);
+        if ($ifModifiedSinceTs !== false && $ifModifiedSinceTs >= $mtime) {
+            header('Cache-Control: public, max-age=31536000, immutable');
+            header('ETag: ' . $etag);
+            header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+            http_response_code(304);
+            exit;
+        }
+    }
+
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header('ETag: ' . $etag);
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+    header('Content-Type: ' . $mime);
+    if ($downloadName !== null && $downloadName !== '') {
+        header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+    }
+    header('Content-Length: ' . (string) $size);
+    readfile($path);
+    exit;
 }
 
 function isValidToken(string $token): bool

@@ -47,7 +47,7 @@
 - `sd_card_path`: Pfad zur SD-Karte (z. B. `F:\DCIM`), wird bei `import_mode=sd_card` rekursiv überwacht
 - `paypal_me_base_url`: Basis-URL für Zahlungslink (z. B. `https://paypal.me/DEINNAME`)
 - `order_zip_dir`: Zielpfad für Admin-Bestell-ZIPs (Default `data/orders`)
-- `order_max_age_hours`: Maximalalter markierter Fotos für gültige Bestellung (Default `24`)
+- `order_max_age_hours`: Legacy-Konfigurationswert, aktuell ohne Wirkung auf Bestellfreigabe (Default `24`)
 
 ## Kommandos
 ### 2026-02-27 – Verfügbare Befehle
@@ -147,7 +147,7 @@
   - Zweck: Bestellformular + serverseitiger Checkout aus Session-Merkliste
   - Request: `GET|POST`, CSRF-geschütztes Formular (`csrf_token`)
   - Response: HTML-Form, Fehlseiten bei Validierungsfehlern (kein JSON), Redirect auf `/mobile/order_done.php?o=<order_token>` bei Erfolg
-  - Validierung: Name+E-Mail immer Pflicht; Versand erzwingt Straße+Nr, PLZ, Ort, Land; 24h-Regel über Foto-`ts` (`order_max_age_hours`)
+  - Validierung: Name+E-Mail immer Pflicht; Versand erzwingt Straße+Nr, PLZ, Ort, Land; keine Altersgrenze der markierten Fotos für Bestellung
   - Side Effects: persistiert `orders`/`order_items`, erzeugt optional ZIP unter `order_zip_dir` (bei verfügbarem `ZipArchive`)
 
 - Endpoint: `/mobile/order_done.php`
@@ -243,6 +243,8 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+
+- 2026-03-03 – Mobile/Bestellung/Caching-Update: 24h-Bestelllimit aus `web/mobile/order.php` entfernt (Bestellung nicht mehr vom Bildalter abhängig) und Hinweistext entsprechend korrigiert. Mobile-Listen laden Thumbnails jetzt mit `loading="lazy"`, `decoding="async"`, `fetchpriority="low"` plus quadratischer Kachelgeometrie. Listenlogik wurde auf `created_at` vereinheitlicht (`Alle`: nur `deleted=0`, Sortierung `created_at DESC`; `Neu`: Zeitfenster über `gallery_window_minutes`, ohne Druckstatus-Filter). Bildendpunkte (`web/mobile/image.php`, `web/mobile/download.php`) unterstützen stabile `id`-Links (Token nur Legacy-Alias), liefern aggressive Bild-Caches (`Cache-Control: public, max-age=31536000, immutable`) inkl. `ETag`/`Last-Modified` und 304-Handling via neuem Helper `sendFileCached()`. Detailansicht zeigt bei fehlender Originaldatei eine klare „Datei fehlt“-Hinweisseite statt still zu brechen.
 
 - 2026-03-03 – Bestellwesen Final: `web/mobile/order.php` wurde auf vollständigen HTML-Checkout mit Pflichtvalidierung (Name+E-Mail, Versandadresse), 24h-Regel, cent-genauer Preislogik, `order_token`-Redirect und optionaler ZIP-Erzeugung pro Bestellung (`order_zip_dir`) umgestellt. `web/mobile/order_done.php` zeigt Token-basiert PayPal-Link, QR-Bild und Offline-/24h-Hinweise. `web/admin/download_order_zip.php` ergänzt Admin-only ZIP-Download. `api_order_name.php` und `api_unmark.php` erzwingen jetzt `initMobileSession()` + CSRF-Header + Rate-Limit.
 

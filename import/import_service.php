@@ -136,8 +136,8 @@ function process_source_file(string $sourceFile): void
 
     $ts = filemtime($sourceFile) ?: time();
     $insert = $hasFingerprint
-        ? $pdo->prepare('INSERT INTO photos(id, ts, filename, token, thumb_filename, deleted, fingerprint) VALUES(:id,:ts,:filename,:token,:thumb,0,:fingerprint)')
-        : $pdo->prepare('INSERT INTO photos(id, ts, filename, token, thumb_filename, deleted) VALUES(:id,:ts,:filename,:token,:thumb,0)');
+        ? $pdo->prepare('INSERT INTO photos(id, ts, filename, token, thumb_filename, deleted, fingerprint, created_at) VALUES(:id,:ts,:filename,:token,:thumb,0,:fingerprint,:createdAt)')
+        : $pdo->prepare('INSERT INTO photos(id, ts, filename, token, thumb_filename, deleted, created_at) VALUES(:id,:ts,:filename,:token,:thumb,0,:createdAt)');
     $filename = $id . '.jpg';
     $thumbFilename = $id . '.jpg';
     $insertPayload = [
@@ -146,6 +146,7 @@ function process_source_file(string $sourceFile): void
         'filename' => $filename,
         'token' => $token,
         'thumb' => $thumbFilename,
+        'createdAt' => $ts,
     ];
     if ($hasFingerprint) {
         $insertPayload['fingerprint'] = $fingerprint;
