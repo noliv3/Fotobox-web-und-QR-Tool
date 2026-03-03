@@ -92,10 +92,38 @@ function pdo(): PDO
     $pdo = new PDO('sqlite:' . dbPath());
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    $pdo->exec('PRAGMA journal_mode = WAL');
+    $pdo->exec('PRAGMA busy_timeout = 5000');
 
     initDb($pdo);
 
     return $pdo;
+}
+
+function resolvePathInDirectory(string $baseDir, string $filename): ?string
+{
+    $baseReal = realpath($baseDir);
+    if ($baseReal === false) {
+        return null;
+    }
+
+    $safeName = basename(trim($filename));
+    if ($safeName === '' || $safeName === '.' || $safeName === '..') {
+        return null;
+    }
+
+    $fullPath = $baseReal . DIRECTORY_SEPARATOR . $safeName;
+    $realPath = realpath($fullPath);
+    if ($realPath === false || !is_file($realPath)) {
+        return null;
+    }
+
+    $prefix = rtrim($baseReal, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    if (strpos($realPath, $prefix) !== 0) {
+        return null;
+    }
+
+    return $realPath;
 }
 
 function initDb(PDO $pdo): void

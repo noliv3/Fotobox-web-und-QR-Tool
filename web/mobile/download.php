@@ -25,8 +25,8 @@ if ($filename === '') {
     $filename = (string) $photo['id'] . '.jpg';
 }
 
-$file = pathOriginals() . '/' . $filename;
-if (!is_file($file)) {
+$file = resolvePathInDirectory(pathOriginals(), $filename);
+if ($file === null) {
     http_response_code(404);
     exit;
 }

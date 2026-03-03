@@ -7,6 +7,19 @@
   let pressStart = null;
   let pressTarget = null;
 
+  function parseJsonResponse(response) {
+    if (!response.ok) {
+      throw new Error('HTTP ' + response.status);
+    }
+
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('application/json')) {
+      throw new Error('INVALID_CONTENT_TYPE');
+    }
+
+    return response.json();
+  }
+
   function postForm(url, payload) {
     const csrfMeta = document.querySelector('meta[name=\"csrf-token\"]');
     const csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '').trim() : '';
@@ -19,12 +32,7 @@
       },
       body,
       credentials: 'same-origin'
-    }).then((r) => {
-      if (!r.ok) {
-        throw new Error('HTTP ' + r.status);
-      }
-      return r.json();
-    }).catch(() => ({ ok: false }));
+    }).then(parseJsonResponse).catch(() => ({ ok: false }));
   }
 
   function showToast(message, options = {}) {
@@ -67,7 +75,7 @@
   function toggleFavById(photoId, done) {
     postForm('/mobile/api_mark.php', { action: 'toggle', id: photoId }).then((res) => {
       if (!res || res.ok !== true) {
-        showToast('Fehler');
+        showToast('Fehler aufgetreten');
         return;
       }
       done(res.state);
@@ -190,7 +198,7 @@
         if (!photoId) return;
         postForm('/mobile/api_mark.php', { action: 'remove', id: photoId }).then((res) => {
           if (!res || res.ok !== true) {
-            showToast('Fehler');
+            showToast('Fehler aufgetreten');
             return;
           }
           const tile = btn.closest('.tile');

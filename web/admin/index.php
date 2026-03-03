@@ -150,6 +150,12 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
 
 <script>
 (() => {
+  function parseJsonResponse(response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('application/json')) throw new Error('INVALID_CONTENT_TYPE');
+    return response.json();
+  }
   const delButtons = document.querySelectorAll('[data-delete-photo]');
   delButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -162,9 +168,9 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
         body
-      }).then((r) => r.json()).then((res) => {
+      }).then(parseJsonResponse).then((res) => {
         if (res && res.ok) tile.remove();
-      });
+      }).catch(() => {});
     });
   });
 
@@ -173,7 +179,7 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
   if (!select || !save) return;
 
   fetch('/admin/api_printers.php')
-    .then((r) => r.json())
+    .then(parseJsonResponse)
     .then((res) => {
       if (!res || !res.ok) return;
       const current = res.current || '';
@@ -197,7 +203,7 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
       body
-    });
+    }).then(parseJsonResponse).catch(() => {});
   });
 })();
 </script>
