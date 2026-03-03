@@ -33,6 +33,20 @@ if ($rows === []) {
 
 $tmpDir = pathData() . '/tmp';
 ensureDir($tmpDir);
+
+$maxZipAgeSeconds = 2 * 60 * 60;
+$now = time();
+foreach (glob($tmpDir . '/*.zip') ?: [] as $staleZipPath) {
+    if (!is_file($staleZipPath)) {
+        continue;
+    }
+
+    $mtime = @filemtime($staleZipPath);
+    if ($mtime !== false && ($now - (int) $mtime) > $maxZipAgeSeconds) {
+        @unlink($staleZipPath);
+    }
+}
+
 $sessionToken = getOrCreateSessionToken();
 $zipPath = $tmpDir . '/' . preg_replace('/[^a-zA-Z0-9]/', '', $sessionToken) . '_' . nowTs() . '.zip';
 

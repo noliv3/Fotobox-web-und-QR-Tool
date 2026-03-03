@@ -86,6 +86,7 @@ $backoffSeconds = 5
 $maxCrashes = 5
 $maxBackoff = 60
 $global:LastWatcherEventTs = 0
+$lastCleanupRunAt = [DateTime]::UtcNow.AddMinutes(-60)
 
 try {
     while ($true) {
@@ -149,7 +150,41 @@ try {
         $pending = Get-PendingPrintJobsCount -PhpExe $phpExe -Config $config
         Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "Print Queue Pending: $pending"
         if ($pending -gt 0) {
-            Invoke-PrintWorkerRun -PhpExe $phpExe -Config $config -SupervisorLog $supervisorLog
+            try {
+                $printResult = & $phpExe (Join-Path $repoRoot 'import/print_worker.php') 'run' 2>&1
+                $printText = (($printResult | ForEach-Object { [string]$_ }) -join ' | ').Trim()
+                if ($LASTEXITCODE -eq 0) {
+                    if ($printText -ne '') {
+                        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message ("print_worker.php run: {0}" -f $printText)
+                    } else {
+                        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message 'print_worker.php run ohne Ausgabe abgeschlossen.'
+                    }
+                } else {
+                    Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("print_worker.php run ExitCode={0}; Ausgabe: {1}" -f $LASTEXITCODE, $printText)
+                }
+            } catch {
+                Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("print_worker.php run Fehler: {0}" -f $_.Exception.Message)
+            }
+        }
+
+        $nowUtc = [DateTime]::UtcNow
+        if (($nowUtc - $lastCleanupRunAt).TotalMinutes -ge 60) {
+            try {
+                $cleanupResult = & $phpExe (Join-Path $repoRoot 'import/import_service.php') 'cleanup' 2>&1
+                $cleanupText = (($cleanupResult | ForEach-Object { [string]$_ }) -join ' | ').Trim()
+                if ($LASTEXITCODE -eq 0) {
+                    if ($cleanupText -ne '') {
+                        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message ("import_service.php cleanup: {0}" -f $cleanupText)
+                    } else {
+                        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message 'import_service.php cleanup ohne Ausgabe abgeschlossen.'
+                    }
+                } else {
+                    Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("import_service.php cleanup ExitCode={0}; Ausgabe: {1}" -f $LASTEXITCODE, $cleanupText)
+                }
+            } catch {
+                Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("import_service.php cleanup Fehler: {0}" -f $_.Exception.Message)
+            }
+            $lastCleanupRunAt = $nowUtc
         }
 
         $idleMinutes = [int]$config.camera_idle_minutes

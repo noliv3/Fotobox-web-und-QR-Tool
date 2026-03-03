@@ -29,6 +29,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         header('Location: /admin/?tab=jobs', true, 302);
         exit;
     }
+
+    if ($action === 'complete_order') {
+        $orderId = (int) ($_POST['order_id'] ?? 0);
+        if ($orderId > 0) {
+            $stmt = $pdo->prepare("UPDATE orders SET status = 'done' WHERE id = :id");
+            $stmt->execute([':id' => $orderId]);
+            adminActionLog('complete_order', ['id' => $orderId]);
+        }
+        header('Location: /admin/?tab=orders', true, 302);
+        exit;
+    }
 }
 
 $tab = (string) ($_GET['tab'] ?? 'jobs');
@@ -88,7 +99,7 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
     <?php elseif ($tab === 'orders'): ?>
         <section class="panel">
             <table>
-                <thead><tr><th>ID</th><th>Zeit</th><th>Name</th><th>Count</th><th>Versand</th><th>Preis</th><th>Status</th></tr></thead>
+                <thead><tr><th>ID</th><th>Zeit</th><th>Name</th><th>Count</th><th>Versand</th><th>Preis</th><th>Status</th><th>Aktion</th></tr></thead>
                 <tbody>
                 <?php foreach ($orders as $order): ?>
                     <tr>
@@ -99,6 +110,16 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
                         <td><?= ((int) ($order['shipping_enabled'] ?? 0)) === 1 ? 'ja' : 'nein' ?></td>
                         <td><?= number_format((float) ($order['price_total'] ?? 0), 2, ',', '.') ?> EUR</td>
                         <td><?= htmlspecialchars((string) ($order['status'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td>
+                            <?php if ((string) ($order['status'] ?? '') !== 'done'): ?>
+                                <form method="post" class="inline">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="action" value="complete_order">
+                                    <input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>">
+                                    <button type="submit">Erledigen</button>
+                                </form>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
