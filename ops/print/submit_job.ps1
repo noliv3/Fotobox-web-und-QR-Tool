@@ -4,67 +4,101 @@ param(
     [Parameter(Mandatory = $true)][string]$DocumentName
 )
 
-$spooler = Get-Service -Name 'Spooler' -ErrorAction SilentlyContinue
-if ($null -eq $spooler -or $spooler.Status -ne 'Running') {
-    [pscustomobject]@{ ok = $false; error = 'SPOOLER_STOPPED' } | ConvertTo-Json -Compress
-    exit 0
-}
-
-$printer = Get-Printer -Name $PrinterName -ErrorAction SilentlyContinue
-if ($null -eq $printer) {
-    [pscustomobject]@{ ok = $false; error = 'PRINTER_NOT_FOUND' } | ConvertTo-Json -Compress
-    exit 0
-}
-
-if (-not (Test-Path -LiteralPath $File)) {
-    [pscustomobject]@{ ok = $false; error = 'PRINTFILE_MISSING' } | ConvertTo-Json -Compress
-    exit 0
-}
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$WarningPreference = 'SilentlyContinue'
+$InformationPreference = 'SilentlyContinue'
+$VerbosePreference = 'SilentlyContinue'
+$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 try {
-    Add-Type -AssemblyName System.Drawing
-    Add-Type -AssemblyName System.Windows.Forms
-
-    $printDoc = New-Object System.Drawing.Printing.PrintDocument
-    $printDoc.PrinterSettings.PrinterName = $PrinterName
-    $printDoc.DocumentName = $DocumentName
-
-    $printDoc.add_PrintPage({
-        param($sender, $e)
-        $img = [System.Drawing.Image]::FromFile($File)
-        try {
-            $bounds = $e.MarginBounds
-            $ratio = [Math]::Min($bounds.Width / $img.Width, $bounds.Height / $img.Height)
-            $w = [int]([Math]::Floor($img.Width * $ratio))
-            $h = [int]([Math]::Floor($img.Height * $ratio))
-            $x = $bounds.X + [int](($bounds.Width - $w) / 2)
-            $y = $bounds.Y + [int](($bounds.Height - $h) / 2)
-            $rect = New-Object System.Drawing.Rectangle($x, $y, $w, $h)
-            $e.Graphics.DrawImage($img, $rect)
-        }
-        finally {
-            $img.Dispose()
-        }
-        $e.HasMorePages = $false
-    })
-
-    $printDoc.Print()
-    Start-Sleep -Milliseconds 600
-
-    $job = Get-PrintJob -PrinterName $PrinterName -ErrorAction SilentlyContinue |
-        Where-Object { $_.DocumentName -eq $DocumentName } |
-        Sort-Object -Property SubmittedTime -Descending |
-        Select-Object -First 1
-
-    if ($null -eq $job) {
-        [pscustomobject]@{ ok = $false; error = 'JOB_ID_NOT_FOUND' } | ConvertTo-Json -Compress
+    $spooler = Get-Service -Name 'Spooler' -ErrorAction Stop
+    if ($spooler.Status -ne 'Running') {
+        Write-Output (@{ ok = $false; error = 'SPOOLER_STOPPED' } | ConvertTo-Json -Compress)
         exit 0
     }
 
-    [pscustomobject]@{ ok = $true; jobId = [int]$job.ID } | ConvertTo-Json -Compress
+    $printer = Get-Printer -Name $PrinterName -ErrorAction Stop
+    if ($null -eq $printer) {
+        Write-Output (@{ ok = $false; error = 'PRINTER_NOT_FOUND' } | ConvertTo-Json -Compress)
+        exit 0
+    }
+
+    if (-not (Test-Path -LiteralPath $File)) {
+        Write-Output (@{ ok = $false; error = 'PRINTFILE_MISSING' } | ConvertTo-Json -Compress)
+        exit 0
+    }
+
+    Add-Type -Language CSharp -ReferencedAssemblies @('System.Drawing', 'System.Drawing.Common', 'System.Windows.Forms') -TypeDefinition @"
+using System;
+using System.Drawing;
+using System.Drawing.Printing;
+
+public static class PhotoboxPrintHelper {
+    public static void PrintFill(string printerName, string filePath, string documentName) {
+        using (var img = Image.FromFile(filePath))
+        using (var doc = new PrintDocument()) {
+            doc.PrinterSettings.PrinterName = printerName;
+            doc.DocumentName = documentName;
+            doc.PrintPage += (sender, e) => {
+                var dest = e.MarginBounds;
+                float imgAspect = (float)img.Width / (float)img.Height;
+                float destAspect = (float)dest.Width / (float)dest.Height;
+
+                Rectangle srcRect;
+                if (imgAspect > destAspect) {
+                    int srcW = (int)Math.Floor(img.Height * destAspect);
+                    int srcX = (img.Width - srcW) / 2;
+                    srcRect = new Rectangle(srcX, 0, srcW, img.Height);
+                } else {
+                    int srcH = (int)Math.Floor(img.Width / destAspect);
+                    int srcY = (img.Height - srcH) / 2;
+                    srcRect = new Rectangle(0, srcY, img.Width, srcH);
+                }
+
+                e.Graphics.DrawImage(img, dest, srcRect, GraphicsUnit.Pixel);
+                e.HasMorePages = false;
+            };
+
+            doc.Print();
+        }
+    }
+}
+"@
+
+    $uniqueDocumentName = 'photobox_job_' + $DocumentName + '_' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    [PhotoboxPrintHelper]::PrintFill($PrinterName, $File, $uniqueDocumentName)
+
+    $job = $null
+    for ($i = 0; $i -lt 10; $i++) {
+        Start-Sleep -Milliseconds 200
+        $job = Get-PrintJob -PrinterName $PrinterName -ErrorAction SilentlyContinue |
+            Where-Object { $_.DocumentName -eq $uniqueDocumentName } |
+            Sort-Object -Property SubmittedTime -Descending |
+            Select-Object -First 1
+        if ($null -ne $job) {
+            break
+        }
+    }
+
+    if ($null -eq $job) {
+        Write-Output (@{ ok = $false; error = 'JOB_ID_NOT_FOUND' } | ConvertTo-Json -Compress)
+        exit 0
+    }
+
+    Write-Output (@{ ok = $true; jobId = [int]$job.ID; documentName = $uniqueDocumentName } | ConvertTo-Json -Compress)
     exit 0
 }
 catch {
-    [pscustomobject]@{ ok = $false; error = 'SUBMIT_EXCEPTION' } | ConvertTo-Json -Compress
+    $code = 'PS_EXCEPTION'
+    if ($_.FullyQualifiedErrorId -like '*GetPrinter*' -or $_.CategoryInfo.Reason -eq 'CimJobException') {
+        $code = 'PRINTER_NOT_FOUND'
+    } elseif ($_.FullyQualifiedErrorId -like '*ServiceCommandException*') {
+        $code = 'SPOOLER_STOPPED'
+    } elseif ($_.Exception -and $_.Exception.GetType().Name -like '*Win32Exception*') {
+        $code = 'JOB_ID_NOT_FOUND'
+    }
+
+    Write-Output (@{ ok = $false; error = $code } | ConvertTo-Json -Compress)
     exit 0
 }
