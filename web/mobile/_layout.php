@@ -33,7 +33,7 @@ function mobileRenderLayout(array $params): void
         <header class="mobile-header">
             <a class="brand-link" href="/mobile/">Photobox</a>
             <div class="status-line"><?= mobileEsc($statusLine) ?></div>
-            <button class="menu-button" type="button" aria-label="Menue" data-menu-toggle>&#9776;</button>
+            <button type="button" class="menu-button" data-menu-button aria-label="Menü" aria-expanded="false">☰</button>
         </header>
 
         <nav class="mobile-tabs" aria-label="Navigation">
