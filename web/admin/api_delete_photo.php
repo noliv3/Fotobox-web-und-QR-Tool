@@ -12,6 +12,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     responseJson(['ok' => false], 405);
 }
 
+if (!verifyCsrfToken((string) ($_POST['csrf_token'] ?? ''))) {
+    responseJson(['ok' => false], 403);
+}
+
 $photoId = trim((string) ($_POST['id'] ?? ''));
 if ($photoId === '') {
     responseJson(['ok' => false], 400);
@@ -33,7 +37,7 @@ if (is_file($thumb)) {
     @unlink($thumb);
 }
 
-$deleteStmt = $pdo->prepare('DELETE FROM photos WHERE id = :id');
+$deleteStmt = $pdo->prepare('UPDATE photos SET deleted = 1 WHERE id = :id');
 $deleteStmt->execute([':id' => $photoId]);
 adminActionLog('delete_photo', ['id' => $photoId]);
 

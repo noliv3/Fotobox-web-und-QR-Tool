@@ -45,6 +45,10 @@ function detectPrinterNames(): array
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (!verifyCsrfToken((string) ($_POST['csrf_token'] ?? ''))) {
+        responseJson(['ok' => false], 403);
+    }
+
     $name = trim((string) ($_POST['name'] ?? ''));
     setSetting($pdo, 'printer_name', $name);
     adminActionLog('set_printer', ['name' => $name]);

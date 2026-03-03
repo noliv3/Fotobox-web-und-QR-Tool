@@ -8,6 +8,9 @@ noCacheHeaders();
 noIndexHeaders();
 requirePost();
 
+session_name('pb_mobile');
+session_start();
+
 $pdo = pdo();
 $cfg = config();
 
@@ -31,8 +34,14 @@ if (!$printConfigured) {
     responseJson(['error' => 'print_not_configured'], 503);
 }
 
-$apiKey = $_SERVER['HTTP_X_API_KEY'] ?? ($_POST['print_api_key'] ?? '');
-if (!is_string($apiKey) || !hash_equals($configuredApiKey, $apiKey)) {
+$csrfToken = (string) ($_POST['csrf_token'] ?? '');
+$printTicket = (string) ($_POST['print_ticket'] ?? '');
+if (!verifyCsrfToken($csrfToken) || !consumePrintTicket($printTicket, (string) $photo['id'])) {
+    responseJson(['error' => 'forbidden'], 403);
+}
+
+$apiKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
+if ($apiKey !== '' && (!is_string($apiKey) || !hash_equals($configuredApiKey, $apiKey))) {
     responseJson(['error' => 'forbidden'], 403);
 }
 
