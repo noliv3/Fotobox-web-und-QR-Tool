@@ -29,6 +29,12 @@ return [
     'printer_name' => '',                      // optional, je nach Implementierung
     'print_api_key' => 'CHANGE_ME_PRINT_API_KEY',
 
+
+    // Orders
+    'paypal_me_base_url' => 'https://paypal.me/DEINNAME',
+    'order_zip_dir' => __DIR__ . '/../data/orders',
+    'order_max_age_hours' => 24,
+
     // Admin
     'admin_password_hash' => 'CHANGE_ME',      // legacy, optional
     'admin_code' => 'CHANGE_ME_ADMIN_CODE',    // neuer stiller Admin-Gate Code

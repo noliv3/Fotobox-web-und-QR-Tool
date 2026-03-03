@@ -64,6 +64,16 @@ function pathPrintfiles(): string
     return pathData() . '/printfiles';
 }
 
+function pathOrders(): string
+{
+    $configured = trim((string) (config()['order_zip_dir'] ?? ''));
+    if ($configured !== '') {
+        return $configured;
+    }
+
+    return pathData() . '/orders';
+}
+
 function dbPath(): string
 {
     return pathQueue() . '/photobox.sqlite';
@@ -78,6 +88,7 @@ function ensureAppDirs(): void
     ensureDir(pathQueue());
     ensureDir(pathLogs());
     ensureDir(pathPrintfiles());
+    ensureDir(pathOrders());
 }
 
 function pdo(): PDO
@@ -152,6 +163,7 @@ function initDb(PDO $pdo): void
     }
 
     ensurePrintSchema($pdo);
+    ensureOrderSchema($pdo);
 
     ensureTableColumns($pdo, 'orders', [
         'created_at' => 'TEXT',
@@ -164,6 +176,43 @@ function initDb(PDO $pdo): void
         'fingerprint' => 'TEXT',
     ]);
     migratePhotoFilenameFingerprint($pdo);
+}
+
+
+function ensureOrderSchema(PDO $pdo): void
+{
+    ensureTableColumns($pdo, 'orders', [
+        'created_at' => 'INTEGER',
+        'name' => 'TEXT',
+        'email' => "TEXT NOT NULL DEFAULT ''",
+        'shipping_enabled' => 'INTEGER NOT NULL DEFAULT 0',
+        'addr_street' => 'TEXT NULL',
+        'addr_zip' => 'TEXT NULL',
+        'addr_city' => 'TEXT NULL',
+        'addr_country' => 'TEXT NULL',
+        'photo_count' => 'INTEGER NOT NULL DEFAULT 0',
+        'price_cents' => 'INTEGER NOT NULL DEFAULT 0',
+        'paypal_url' => 'TEXT NULL',
+        'pay_status' => "TEXT NOT NULL DEFAULT 'unpaid'",
+        'order_token' => 'TEXT',
+        'zip_path' => 'TEXT NULL',
+    ]);
+
+    $pdo->exec("UPDATE orders SET created_at = COALESCE(created_at, created_ts, strftime('%s','now')) WHERE created_at IS NULL OR created_at = ''");
+    $pdo->exec("UPDATE orders SET photo_count = COALESCE(photo_count, 0) WHERE photo_count IS NULL");
+    $pdo->exec("UPDATE orders SET price_cents = COALESCE(price_cents, 0) WHERE price_cents IS NULL");
+    $pdo->exec("UPDATE orders SET pay_status = 'unpaid' WHERE pay_status IS NULL OR trim(pay_status) = ''");
+    $pdo->exec("UPDATE orders SET order_token = lower(hex(randomblob(16))) WHERE order_token IS NULL OR trim(order_token) = ''");
+
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_order_token ON orders(order_token)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)');
+
+    ensureTableColumns($pdo, 'order_items', [
+        'id' => 'INTEGER',
+        'created_at' => 'INTEGER',
+    ]);
+    $pdo->exec("UPDATE order_items SET created_at = COALESCE(created_at, strftime('%s','now')) WHERE created_at IS NULL OR created_at = 0");
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id)');
 }
 
 function ensurePrintSchema(PDO $pdo): void

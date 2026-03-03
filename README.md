@@ -44,6 +44,9 @@ Wichtige Schlüssel:
 - `retention_days`
 - `gallery_window_minutes` (Default: `15`)
 - `print_api_key`
+- `paypal_me_base_url` (z. B. `https://paypal.me/DEINNAME`)
+- `order_zip_dir` (Default: `data/orders`)
+- `order_max_age_hours` (Default: `24`)
 - `admin_password_hash` (`CHANGE_ME` = Admin deaktiviert)
 - `rate_limit_max`, `rate_limit_window_seconds`
 
@@ -136,6 +139,7 @@ php import/print_worker.php run
 
 ## Changelog
 
+- 2026-03-03 – Bestellwesen Final: `web/mobile/order.php` validiert jetzt Name+E-Mail (und bei Versand vollstaendige Adresse), erzwingt die 24h-Regel auf Basis der Foto-Zeitstempel, speichert Bestellungen mit `order_token`/`price_cents`/`paypal_url` und erzeugt pro Bestellung ein Admin-ZIP unter `data/orders/<order_id>/order_<order_id>.zip` (wenn `ZipArchive` verfuegbar). `web/mobile/order_done.php` nutzt Token-Lookup und zeigt PayPal-Abschnitt inkl. QR-Bild (`/mobile/qr.php`) + Offline-Hinweis. Admin-Bereich zeigt ZIP-Link (`/admin/download_order_zip.php`) nur intern; Legacy-APIs (`api_order_name.php`, `api_unmark.php`) wurden auf Session+CSRF+Rate-Limit gehaertet.
 - 2026-03-03 – Mobile/ZIP-Hardening: `.menu-overlay` rendert im Hidden-State nun strikt mit `display:none` und schaltet nur sichtbar auf `display:flex`, um fehlerhafte Header-Layouts zu vermeiden. `web/mobile/download_zip.php` wurde offline-stabil gehärtet (Empty-State statt Fatal, `ZipArchive`-Check, `data/tmp`-Checks, Max-Items=200, robuste Header/Output-Buffer-Bereinigung, nur valide Originale im ZIP). `start.ps1` prüft zusätzlich fail-fast auf `ZipArchive` und bricht mit klarer Meldung bei fehlender ZIP-Extension ab.
 
 - 2026-03-03 – Mobile Header-Menüfix: Im Mobile-Header wurde das rechte „Galerie“-Textfeld vollständig entfernt und durch einen kleinen Hamburger-Button (`.menu-button`) ersetzt; der Galerie-Link bleibt ausschließlich im Overlay-Menü (`menu-panel`) erreichbar.
