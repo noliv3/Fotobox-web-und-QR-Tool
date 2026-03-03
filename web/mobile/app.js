@@ -150,24 +150,27 @@
   }
 
   function bindMenu() {
-    const toggle = document.querySelector('[data-menu-toggle]');
+    const toggle = document.querySelector('[data-menu-button]');
     const overlay = document.querySelector('[data-menu-overlay]');
     if (!toggle || !overlay) return;
     const panel = overlay.querySelector('.menu-panel');
 
     toggle.addEventListener('click', () => {
       overlay.hidden = !overlay.hidden;
+      toggle.setAttribute('aria-expanded', overlay.hidden ? 'false' : 'true');
     });
 
     overlay.addEventListener('click', (ev) => {
       if (panel && panel.contains(ev.target)) return;
       overlay.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
     });
 
     if (panel) {
       panel.querySelectorAll('a').forEach((a) => {
         a.addEventListener('click', () => {
           overlay.hidden = true;
+          toggle.setAttribute('aria-expanded', 'false');
         });
       });
     }
@@ -175,6 +178,7 @@
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape') {
         overlay.hidden = true;
+        toggle.setAttribute('aria-expanded', 'false');
       }
     });
   }
