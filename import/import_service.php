@@ -187,9 +187,25 @@ function run_cleanup(): void
 
     $update = $pdo->prepare('UPDATE photos SET deleted = 1 WHERE id = :id');
     foreach ($stmt->fetchAll() as $photo) {
-        $id = $photo['id'];
+        $id = (string) $photo['id'];
         $original = $paths['originals'] . '/' . $id . '.jpg';
         $thumb = $paths['thumbs'] . '/' . $id . '.jpg';
+
+        $jobCheck = $pdo->prepare("SELECT id, printfile_path FROM print_jobs WHERE photo_id = :photoId AND status IN ('queued','sending','spooled','needs_attention','paused')");
+        $jobCheck->execute([':photoId' => $id]);
+        $protectOriginal = false;
+        foreach ($jobCheck->fetchAll() as $job) {
+            $printfile = trim((string) ($job['printfile_path'] ?? ''));
+            if ($printfile === '' || !is_file($printfile)) {
+                $protectOriginal = true;
+                break;
+            }
+        }
+
+        if ($protectOriginal) {
+            write_log($log, 'Retention übersprungen (offener Druckjob ohne printfile): ' . $id);
+            continue;
+        }
 
         if (is_file($original)) {
             @unlink($original);
@@ -200,6 +216,37 @@ function run_cleanup(): void
 
         $update->execute(['id' => $id]);
         write_log($log, 'Gelöscht (Retention): ' . $id);
+    }
+
+    cleanup_printfiles($pdo, $paths, $log);
+}
+
+function cleanup_printfiles(PDO $pdo, array $paths, string $log): void
+{
+    $dir = $paths['printfiles'] ?? '';
+    if (!is_string($dir) || $dir === '' || !is_dir($dir)) {
+        return;
+    }
+
+    $openPaths = [];
+    $openRows = $pdo->query("SELECT printfile_path FROM print_jobs WHERE status IN ('queued','sending','spooled','needs_attention','paused')")->fetchAll();
+    foreach ($openRows as $row) {
+        $path = trim((string) ($row['printfile_path'] ?? ''));
+        if ($path !== '') {
+            $openPaths[$path] = true;
+        }
+    }
+
+    $doneRows = $pdo->query("SELECT printfile_path FROM print_jobs WHERE status IN ('done','canceled','failed_hard')")->fetchAll();
+    foreach ($doneRows as $row) {
+        $path = trim((string) ($row['printfile_path'] ?? ''));
+        if ($path === '' || isset($openPaths[$path])) {
+            continue;
+        }
+        if (is_file($path) && str_starts_with(realpath($path) ?: '', realpath($dir) ?: '')) {
+            @unlink($path);
+            write_log($log, 'Printfile gelöscht: ' . basename($path));
+        }
     }
 }
 

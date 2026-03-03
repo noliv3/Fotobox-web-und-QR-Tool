@@ -16,7 +16,7 @@ if ($jobId <= 0) {
     responseJson(['error' => 'invalid_job_id'], 400);
 }
 
-$stmt = pdo()->prepare('SELECT status, error FROM print_jobs WHERE id = :id LIMIT 1');
+$stmt = pdo()->prepare('SELECT status, COALESCE(last_error, error) AS error FROM print_jobs WHERE id = :id LIMIT 1');
 $stmt->execute([':id' => $jobId]);
 $job = $stmt->fetch();
 

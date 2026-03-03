@@ -8,8 +8,7 @@ noCacheHeaders();
 noIndexHeaders();
 requirePost();
 
-session_name('pb_mobile');
-session_start();
+initMobileSession();
 
 $pdo = pdo();
 $cfg = config();
@@ -34,7 +33,7 @@ if (!$printConfigured) {
     responseJson(['error' => 'print_not_configured'], 503);
 }
 
-$csrfToken = (string) ($_POST['csrf_token'] ?? '');
+$csrfToken = (string) ($_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''));
 $printTicket = (string) ($_POST['print_ticket'] ?? '');
 if (!verifyCsrfToken($csrfToken) || !consumePrintTicket($printTicket, (string) $photo['id'])) {
     responseJson(['error' => 'forbidden'], 403);
@@ -50,12 +49,44 @@ if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['ra
     responseJson(['error' => 'rate_limited'], 429);
 }
 
-$stmt = $pdo->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error) VALUES(:photoId, :createdTs, :status, :error)');
+$openCountStmt = $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status IN ('queued','sending','spooled','needs_attention','paused')");
+$openCount = (int) $openCountStmt->fetchColumn();
+if ($openCount >= 50) {
+    responseJson(['error' => 'queue_full'], 503);
+}
+
+$createdTs = nowTs();
+$stmt = $pdo->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error, last_error, attempts, updated_at) VALUES(:photoId, :createdTs, :status, :error, :lastError, :attempts, :updatedAt)');
 $stmt->execute([
     ':photoId' => $photo['id'],
-    ':createdTs' => nowTs(),
-    ':status' => 'pending',
+    ':createdTs' => $createdTs,
+    ':status' => 'queued',
     ':error' => null,
+    ':lastError' => null,
+    ':attempts' => 0,
+    ':updatedAt' => $createdTs,
 ]);
 
-responseJson(['jobId' => (int) $pdo->lastInsertId()]);
+$jobId = (int) $pdo->lastInsertId();
+$printfile = createPrintfileForJob((string) $photo['id'], $jobId);
+if ($printfile === null) {
+    $failed = $pdo->prepare('UPDATE print_jobs SET status = :status, last_error = :error, error = :error, last_error_at = :errorAt, updated_at = :updatedAt WHERE id = :id');
+    $failed->execute([
+        ':status' => 'failed_hard',
+        ':error' => 'RENDER_FAILED',
+        ':errorAt' => nowTs(),
+        ':updatedAt' => nowTs(),
+        ':id' => $jobId,
+    ]);
+
+    responseJson(['ok' => false, 'job_id' => $jobId, 'status' => 'failed_hard', 'error' => 'RENDER_FAILED'], 500);
+}
+
+$update = $pdo->prepare('UPDATE print_jobs SET printfile_path = :printfilePath, updated_at = :updatedAt WHERE id = :id');
+$update->execute([
+    ':printfilePath' => $printfile,
+    ':updatedAt' => nowTs(),
+    ':id' => $jobId,
+]);
+
+responseJson(['ok' => true, 'job_id' => $jobId, 'status' => 'queued']);
