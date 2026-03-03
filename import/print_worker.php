@@ -84,7 +84,7 @@ function pollSpooledJob(PDO $pdo, string $printerName, string $log): void
 
     $spoolId = (int) $job['spool_job_id'];
     $status = getSpoolJobStatus($printerName, $spoolId);
-    if (!(bool) ($status['ok'] ?? false)) {
+    if (trim((string) ($status['error'] ?? '')) !== '') {
         return;
     }
 
@@ -170,14 +170,14 @@ function submitNextQueuedJob(PDO $pdo, string $printerName, string $log): void
         'status' => 'sending',
     ], $log);
 
-    $documentName = 'photobox_job_' . (int) $job['id'];
+    $documentName = (string) ((int) $job['id']);
     $submit = submitSpoolJob($printerName, $printfilePath, $documentName);
 
     if ((bool) ($submit['ok'] ?? false) && (int) ($submit['jobId'] ?? 0) > 0) {
         updateJobState($pdo, $job, [
             'status' => 'spooled',
             'spool_job_id' => (int) $submit['jobId'],
-            'document_name' => $documentName,
+            'document_name' => (string) ($submit['documentName'] ?? ('photobox_job_' . (int) $job['id'])),
             'last_error' => null,
             'last_error_at' => null,
             'next_retry_at' => null,
@@ -245,24 +245,53 @@ function updateJobState(PDO $pdo, array $job, array $updates, string $log): void
 
 function runPsJson(array $args): array
 {
-    $base = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'];
+    static $stderrFingerprintByScript = [];
+
+    $base = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'];
     $command = array_merge($base, $args);
     $parts = array_map('escapeshellarg', $command);
-    $cmd = implode(' ', $parts) . ' 2>&1';
+    $cmd = implode(' ', $parts);
 
-    exec($cmd, $output, $code);
+    $descriptors = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = proc_open($cmd, $descriptors, $pipes);
+    if (!is_resource($process)) {
+        return ['ok' => false, 'error' => 'POWERSHELL_EXEC_FAILED'];
+    }
+
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[2]);
+    $code = proc_close($process);
+
+    $scriptKey = (string) ($args[0] ?? 'unknown_script');
+    $stderrTrimmed = trim((string) $stderr);
+    if ($stderrTrimmed !== '') {
+        $fingerprint = sha1($stderrTrimmed);
+        if (($stderrFingerprintByScript[$scriptKey] ?? '') !== $fingerprint) {
+            $stderrFingerprintByScript[$scriptKey] = $fingerprint;
+            write_log(app_paths()['logs'] . '/print_worker.log', 'powershell stderr ' . basename($scriptKey) . ' ' . $stderrTrimmed);
+        }
+    }
+
     if ($code !== 0) {
         return ['ok' => false, 'error' => 'POWERSHELL_EXEC_FAILED'];
     }
 
-    $raw = trim(implode("\n", $output));
+    $raw = trim((string) $stdout);
     if ($raw === '') {
         return ['ok' => false, 'error' => 'POWERSHELL_EMPTY_RESPONSE'];
     }
 
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {
-        return ['ok' => false, 'error' => 'POWERSHELL_INVALID_JSON'];
+        return ['ok' => false, 'error' => 'PS_JSON_INVALID'];
     }
 
     return $decoded;
@@ -271,7 +300,7 @@ function runPsJson(array $args): array
 function isSpoolerRunning(): bool
 {
     $status = runPsJson([ROOT . '/ops/print/printer_status.ps1', '-PrinterName', '__spooler_probe__']);
-    return (bool) ($status['spoolerRunning'] ?? false);
+    return trim((string) ($status['error'] ?? '')) !== 'SPOOLER_STOPPED';
 }
 
 function getPrinterStatus(string $printerName): array
