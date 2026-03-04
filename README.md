@@ -153,6 +153,8 @@ php import/print_worker.php run
 
 ## Changelog
 
+- 2026-03-04 – Print-Worker Diagnose- und Statusfix: `import/print_worker.php` behandelt Druckerstatus `Normal|Idle|Ready` nicht mehr als Fehler, sodass Queue-Jobs abgearbeitet werden. Zusätzlich werden `VIRTUAL_PRINTER_UNSUPPORTED`, `PRINTER_NOT_FOUND` und `JOB_ID_NOT_FOUND` als `needs_attention` statt Endlos-Retry markiert. `ops/print/submit_job.ps1` erkennt virtuelle Drucker (z. B. `Microsoft Print to PDF`, `OneNote`) explizit als nicht unterstützte Zielgeräte.
+
 - 2026-03-04 – Merkliste-Print (2 neue Bilder) + Druckfreigabe bei konfiguriertem Drucker: `/mobile/?view=favs` bietet jetzt `2 Gemerkte drucken` (wenn mindestens zwei neue druckbare Favoriten vorhanden sind) via neuem Endpoint `/mobile/api_print_favs.php`. Zusätzlich zeigt die Detailseite den Druckbutton, sobald ein Druckername gesetzt ist (`printer_name`) oder ein API-Key konfiguriert ist.
 - 2026-03-04 – Drucker/Admin-Wartung erweitert: Admin-Login akzeptiert jetzt konfiguriertes Passwort auch ohne gesetzten `admin_code` (oder weiterhin Code). Der Drucker-Tab (`/admin/?tab=printer`) zeigt Spooler/CP1500-Erkennung, bietet `CP1500 koppeln` per WLAN-IP und setzt bei Erfolg den Druckernamen automatisch. Job-Retry setzt Druckjobs wieder konsistent auf `queued` statt Legacy-`pending`.
 - 2026-03-04 – Bestell-Flow ohne mbstring gehärtet: `shared/utils.php` nutzt mit `textSubstr()` jetzt einen Fallback auf `iconv_substr`/`substr`, und `web/mobile/order.php` verwendet diesen Helper für E-Mail/Adressfelder. Damit führt fehlendes `mbstring` nicht mehr zu `500` in `order.php` beim POST.

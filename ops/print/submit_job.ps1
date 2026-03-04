@@ -24,6 +24,11 @@ try {
         exit 0
     }
 
+    if ([string]$printer.Name -match 'Microsoft Print to PDF|OneNote') {
+        Write-Output (@{ ok = $false; error = 'VIRTUAL_PRINTER_UNSUPPORTED' } | ConvertTo-Json -Compress)
+        exit 0
+    }
+
     if (-not (Test-Path -LiteralPath $File)) {
         Write-Output (@{ ok = $false; error = 'PRINTFILE_MISSING' } | ConvertTo-Json -Compress)
         exit 0

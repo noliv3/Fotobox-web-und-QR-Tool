@@ -57,11 +57,12 @@ function run_worker_once(): void
 
     $online = (bool) ($printerStatus['online'] ?? false);
     $paused = (bool) ($printerStatus['paused'] ?? false);
-    $errorState = trim((string) ($printerStatus['errorState'] ?? ''));
+    $errorState = strtolower(trim((string) ($printerStatus['errorState'] ?? '')));
     $queueCount = (int) ($printerStatus['queueCount'] ?? 0);
+    $hasPrinterError = !in_array($errorState, ['', 'normal', 'idle', 'ready'], true);
 
-    if (!$online || $paused || $errorState !== '') {
-        write_log($log, 'worker_run_stop printer_needs_attention');
+    if (!$online || $paused || $hasPrinterError) {
+        write_log($log, 'worker_run_stop printer_needs_attention state=' . $errorState);
         return;
     }
 
@@ -188,7 +189,7 @@ function submitNextQueuedJob(PDO $pdo, string $printerName, string $log): void
     $errorCode = trim((string) ($submit['error'] ?? 'SUBMIT_FAILED'));
     $attempts = ((int) $job['attempts']) + 1;
     $next = $now + printBackoffSeconds($attempts);
-    $targetStatus = in_array($errorCode, ['PAPER_OUT', 'OFFLINE', 'PAUSED', 'PRINTER_ERROR', 'SPOOLER_STOPPED'], true)
+    $targetStatus = in_array($errorCode, ['PAPER_OUT', 'OFFLINE', 'PAUSED', 'PRINTER_ERROR', 'SPOOLER_STOPPED', 'PRINTER_NOT_FOUND', 'JOB_ID_NOT_FOUND', 'VIRTUAL_PRINTER_UNSUPPORTED'], true)
         ? 'needs_attention'
         : 'queued';
 
