@@ -34,7 +34,7 @@ try {
         exit 0
     }
 
-    Add-Type -Language CSharp -ReferencedAssemblies @('System.Drawing', 'System.Drawing.Common', 'System.Windows.Forms') -TypeDefinition @"
+    Add-Type -Language CSharp -ReferencedAssemblies @('System.Drawing', 'System.Windows.Forms') -TypeDefinition @"
 using System;
 using System.Drawing;
 using System.Drawing.Printing;

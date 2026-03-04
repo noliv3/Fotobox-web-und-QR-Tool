@@ -769,7 +769,8 @@ function Invoke-PrintWorkerRun {
 function Get-PendingPrintJobsCount {
     param(
         [Parameter(Mandatory = $true)][string]$PhpExe,
-        [Parameter(Mandatory = $true)][pscustomobject]$Config
+        [Parameter(Mandatory = $true)][pscustomobject]$Config,
+        [string[]]$PrefixArgs = @()
     )
 
     if (-not (Test-Path -LiteralPath $Config.db_path)) {
@@ -783,7 +784,8 @@ $count = $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status IN ('queued',
 echo (int)$count;
 '@
     try {
-        $result = & $PhpExe '-r' $code $Config.db_path 2>&1
+        $args = @() + $PrefixArgs + @('-r', $code, $Config.db_path)
+        $result = & $PhpExe @args 2>&1
         if ($LASTEXITCODE -ne 0) {
             return 0
         }

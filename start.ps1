@@ -327,11 +327,12 @@ try {
             Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message 'Watcher erfolgreich neu gestartet.'
         }
 
-        $pending = Get-PendingPrintJobsCount -PhpExe $phpExe -Config $config
+        $pending = Get-PendingPrintJobsCount -PhpExe $phpExe -Config $config -PrefixArgs $phpLaunchPlan.PhpPrefixArgs
         Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "Print Queue Pending: $pending"
         if ($pending -gt 0) {
             try {
-                $printResult = & $phpExe (Join-Path $repoRoot 'import/print_worker.php') 'run' 2>&1
+                $printArgs = @() + $phpLaunchPlan.PhpPrefixArgs + @((Join-Path $repoRoot 'import/print_worker.php'), 'run')
+                $printResult = & $phpExe @printArgs 2>&1
                 $printText = (($printResult | ForEach-Object { [string]$_ }) -join ' | ').Trim()
                 if ($LASTEXITCODE -eq 0) {
                     if ($printText -ne '') {
@@ -350,7 +351,8 @@ try {
         $nowUtc = [DateTime]::UtcNow
         if (($nowUtc - $lastCleanupRunAt).TotalMinutes -ge 60) {
             try {
-                $cleanupResult = & $phpExe (Join-Path $repoRoot 'import/import_service.php') 'cleanup' 2>&1
+                $cleanupArgs = @() + $phpLaunchPlan.PhpPrefixArgs + @((Join-Path $repoRoot 'import/import_service.php'), 'cleanup')
+                $cleanupResult = & $phpExe @cleanupArgs 2>&1
                 $cleanupText = (($cleanupResult | ForEach-Object { [string]$_ }) -join ' | ').Trim()
                 if ($LASTEXITCODE -eq 0) {
                     if ($cleanupText -ne '') {

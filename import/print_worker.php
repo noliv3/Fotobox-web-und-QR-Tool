@@ -53,6 +53,7 @@ function run_worker_once(): void
         return;
     }
 
+    recoverTransientAttentionJobs($pdo, $log);
     pollSpooledJob($pdo, $printerName, $log);
 
     $online = (bool) ($printerStatus['online'] ?? false);
@@ -73,6 +74,23 @@ function run_worker_once(): void
 
     submitNextQueuedJob($pdo, $printerName, $log);
     write_log($log, 'worker_run_stop');
+}
+
+function recoverTransientAttentionJobs(PDO $pdo, string $log): void
+{
+    $now = nowTs();
+    $stmt = $pdo->prepare(
+        "UPDATE print_jobs
+         SET status = 'queued', updated_at = :now
+         WHERE status = 'needs_attention'
+           AND last_error IN ('JOB_ID_NOT_FOUND')
+           AND (next_retry_at IS NULL OR next_retry_at <= :now)"
+    );
+    $stmt->execute([':now' => $now]);
+    $count = $stmt->rowCount();
+    if ($count > 0) {
+        write_log($log, 'requeued_transient_jobs count=' . $count);
+    }
 }
 
 function pollSpooledJob(PDO $pdo, string $printerName, string $log): void
@@ -189,7 +207,7 @@ function submitNextQueuedJob(PDO $pdo, string $printerName, string $log): void
     $errorCode = trim((string) ($submit['error'] ?? 'SUBMIT_FAILED'));
     $attempts = ((int) $job['attempts']) + 1;
     $next = $now + printBackoffSeconds($attempts);
-    $targetStatus = in_array($errorCode, ['PAPER_OUT', 'OFFLINE', 'PAUSED', 'PRINTER_ERROR', 'SPOOLER_STOPPED', 'PRINTER_NOT_FOUND', 'JOB_ID_NOT_FOUND', 'VIRTUAL_PRINTER_UNSUPPORTED'], true)
+    $targetStatus = in_array($errorCode, ['PAPER_OUT', 'OFFLINE', 'PAUSED', 'PRINTER_ERROR', 'SPOOLER_STOPPED', 'PRINTER_NOT_FOUND', 'VIRTUAL_PRINTER_UNSUPPORTED'], true)
         ? 'needs_attention'
         : 'queued';
 
