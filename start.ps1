@@ -327,25 +327,19 @@ try {
             Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message 'Watcher erfolgreich neu gestartet.'
         }
 
-        $pending = Get-PendingPrintJobsCount -PhpExe $phpExe -Config $config -PrefixArgs $phpLaunchPlan.PhpPrefixArgs
-        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "Print Queue Pending: $pending"
-        if ($pending -gt 0) {
-            try {
-                $printArgs = @() + $phpLaunchPlan.PhpPrefixArgs + @((Join-Path $repoRoot 'import/print_worker.php'), 'run')
-                $printResult = & $phpExe @printArgs 2>&1
-                $printText = (($printResult | ForEach-Object { [string]$_ }) -join ' | ').Trim()
-                if ($LASTEXITCODE -eq 0) {
-                    if ($printText -ne '') {
-                        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message ("print_worker.php run: {0}" -f $printText)
-                    } else {
-                        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message 'print_worker.php run ohne Ausgabe abgeschlossen.'
-                    }
-                } else {
-                    Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("print_worker.php run ExitCode={0}; Ausgabe: {1}" -f $LASTEXITCODE, $printText)
+        try {
+            $printArgs = @() + $phpLaunchPlan.PhpPrefixArgs + @((Join-Path $repoRoot 'import/print_worker.php'), 'run')
+            $printResult = & $phpExe @printArgs 2>&1
+            $printText = (($printResult | ForEach-Object { [string]$_ }) -join ' | ').Trim()
+            if ($LASTEXITCODE -eq 0) {
+                if ($printText -ne '') {
+                    Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message ("print_worker.php run: {0}" -f $printText)
                 }
-            } catch {
-                Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("print_worker.php run Fehler: {0}" -f $_.Exception.Message)
+            } else {
+                Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("print_worker.php run ExitCode={0}; Ausgabe: {1}" -f $LASTEXITCODE, $printText)
             }
+        } catch {
+            Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message ("print_worker.php run Fehler: {0}" -f $_.Exception.Message)
         }
 
         $nowUtc = [DateTime]::UtcNow

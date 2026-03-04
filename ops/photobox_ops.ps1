@@ -784,15 +784,17 @@ $count = $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status IN ('queued',
 echo (int)$count;
 '@
     try {
-        $args = @() + $PrefixArgs + @('-r', $code, $Config.db_path)
+        $args = @() + $PrefixArgs + @('-d', 'display_errors=0', '-d', 'display_startup_errors=0', '-r', $code, $Config.db_path)
         $result = & $PhpExe @args 2>&1
         if ($LASTEXITCODE -ne 0) {
             return 0
         }
 
-        $text = (($result | ForEach-Object { [string]$_ }) -join '').Trim()
-        if ($text -match '^\d+$') {
-            return [int]$text
+        $text = (($result | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+        $lines = @($text -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        $numericLine = $lines | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1
+        if ($null -ne $numericLine -and $numericLine -match '^\d+$') {
+            return [int]$numericLine
         }
         return 0
     } catch {

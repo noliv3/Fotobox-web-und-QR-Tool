@@ -53,6 +53,31 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
     }
 
+    if ($action === 'delete_job') {
+        $jobId = (int) ($_POST['job_id'] ?? 0);
+        if ($jobId > 0) {
+            $q = $pdo->prepare('SELECT printfile_path FROM print_jobs WHERE id = :id');
+            $q->execute([':id' => $jobId]);
+            $row = $q->fetch();
+            if (is_array($row)) {
+                $printfilePath = trim((string) ($row['printfile_path'] ?? ''));
+                if ($printfilePath !== '') {
+                    $base = realpath(app_paths()['data'] . '/printfiles');
+                    $resolved = realpath($printfilePath);
+                    if ($base !== false && $resolved !== false && str_starts_with($resolved, $base . DIRECTORY_SEPARATOR) && is_file($resolved)) {
+                        @unlink($resolved);
+                    }
+                }
+            }
+
+            $del = $pdo->prepare('DELETE FROM print_jobs WHERE id = :id');
+            $del->execute([':id' => $jobId]);
+            adminActionLog('delete_job', ['id' => $jobId]);
+        }
+        header('Location: /admin/?tab=jobs', true, 302);
+        exit;
+    }
+
     if ($action === 'complete_order') {
         $orderId = (int) ($_POST['order_id'] ?? 0);
         if ($orderId > 0) {
@@ -110,6 +135,7 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
                             $hasPrintfilePath = trim((string) ($job['printfile_path'] ?? '')) !== '';
                             $canRetry = in_array($status, ['error', 'failed_hard', 'needs_attention', 'paused', 'canceled'], true) && $hasPrintfilePath;
                             $canCancel = in_array($status, ['queued', 'sending', 'spooled', 'needs_attention', 'paused', 'error', 'failed_hard'], true);
+                            $canDelete = in_array($status, ['canceled', 'failed_hard', 'error', 'done'], true);
                             ?>
                             <?php if ($canRetry): ?>
                                 <form method="post" class="inline">
@@ -125,6 +151,14 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
                                     <input type="hidden" name="action" value="cancel_job">
                                     <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
                                     <button type="submit" class="danger">Abbrechen</button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if ($canDelete): ?>
+                                <form method="post" class="inline">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="action" value="delete_job">
+                                    <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
+                                    <button type="submit" class="danger">Löschen</button>
                                 </form>
                             <?php endif; ?>
                         </td>
