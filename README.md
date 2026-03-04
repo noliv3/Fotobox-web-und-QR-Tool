@@ -54,10 +54,10 @@ Wichtige Schlüssel:
 
 ### 2026-02-27 – Windows Ops (PowerShell 5.1)
 ### 2026-03-04 – digiCamControl Auto-Install + Fail-Fast
-- `start.ps1` führt vor dem Start der Photobox-Dienste `ops/install_digicamcontrol.ps1` aus. Wenn digiCamControl fehlt, wird der Installer (`digiCamControlsetup_2.1.7.0.exe`) automatisch geladen und mit `/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART` silent installiert.
-- Bei Download-/Installationsfehlern wird sofort mit Fehler abgebrochen (`kein Restart-Loop`).
+- `start.ps1` führt vor dem Start der Photobox-Dienste `ops/install_digicamcontrol.ps1` aus. Wenn digiCamControl fehlt, wird der Installer (`digiCamControlsetup_2.1.7.exe`) automatisch geladen und mit `/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART` silent installiert.
+- Bei Download-/Installationsfehlern wird sofort mit eindeutiger Fehlercode-Zeile abgebrochen (`kein Restart-Loop`). Ohne Internet ist der Ablauf nur dann erfolgreich, wenn ein lokaler Installer unter `E:\photobooth\runtime\downloads\digiCamControlsetup_2.1.7.exe` bereits vorhanden ist.
 - `start.ps1` erzwingt die Firewall-Regel `Photobooth digiCamControl Webserver 5513` (TCP Inbound) und bricht ohne Admin-Rechte/Firewall-Fehler fail-fast ab, damit LiveView/Capture zuverlässig erreichbar ist.
-- Wenn `digiCamControl.exe` nicht läuft, wird der Prozess minimiert gestartet und anschließend maximal 10 Sekunden `http://127.0.0.1:5513/session.json` geprüft. Ohne HTTP 200 bricht der Start mit Hinweis auf `Use web server` in den digiCamControl-Settings ab.
+- Wenn `digiCamControl.exe` nicht läuft, wird der Prozess minimiert gestartet und anschließend maximal 10 Sekunden `http://127.0.0.1:5513/session.json` geprüft. Ohne HTTP 200 bricht der Start mit `DCC_WEBSERVER_NOT_READY` ab und verweist klar auf `Settings -> Webserver -> Use web server` + Neustart von digiCamControl.
 - Nach erfolgreichem Healthcheck setzt `start.ps1` `session.folder` per SLC auf `E:\photobooth\data\watch`; bei Fehler wird der Start ebenfalls abgebrochen.
 
 #### digiCamControl Webserver-Endpunkte (lokal)
@@ -151,6 +151,7 @@ php import/print_worker.php run
 
 ## Changelog
 
+- 2026-03-04 – digiCamControl Install-Flow stabilisiert: `ops/install_digicamcontrol.ps1` nutzt TLS1.2, SourceForge-Primär/Fallback-URL mit Redirect-Limit, validiert Downloadgröße (>20MB), verwendet Offline-Fallback auf vorhandenen lokalen Installer und liefert im Fehlerfall genau einen Maschinen-Code (`DCC_DOWNLOAD_FAILED_OFFLINE`, `DCC_DOWNLOAD_FAILED`, `DCC_INSTALL_EXITCODE_*`, `DCC_INSTALL_NOT_DETECTED`). `start.ps1` übernimmt den Rückgabecode und bricht fail-fast mit exakt einer eindeutigen Grundzeile ab; der 5513-Healthcheck meldet bei Fehlschlag `DCC_WEBSERVER_NOT_READY` inkl. Aktivierungs-Hinweis für den DCC-Webserver.
 - 2026-03-04 – Ops digiCamControl-Integration: Neues `ops/install_digicamcontrol.ps1` ergänzt automatische Silent-Installation (SourceForge-Installer) mit klaren Phase-Logs (`installed`, `download_failed`, `install_failed`). `start.ps1` wurde um fail-fast Integration erweitert: Install-Preflight vor PHP-Start, verpflichtende Firewall-Regel für TCP/5513, digiCamControl-Prozessstart, Webserver-Healthcheck (`/session.json`) und SLC-Set für `session.folder` auf `E:\photobooth\data\watch`. Bei jedem Fehlschritt erfolgt sofortiger Abbruch ohne Restart-Loop.
 - 2026-03-03 – Korrektur Bestelllogik + Mobile-Performance: Die 24h-Altersgrenze für Bestellungen wurde entfernt (Bestellungen sind nicht mehr vom Fotoalter abhängig). Mobile-Grid nutzt Lazy-Loading (`loading="lazy"`, `decoding="async"`, `fetchpriority="low"`) mit stabiler 1:1-Thumbnail-Geometrie. „Alle“ zeigt strikt alle nicht gelöschten Fotos (`deleted=0`, Sortierung nach `created_at DESC`), „Neu“ filtert nur nach Zeitfenster und nicht nach Druckstatus. Bildendpunkte liefern jetzt aggressive Byte-Caches (`public, max-age=31536000, immutable`) mit `ETag`/`Last-Modified`/`304`, während HTML weiterhin `no-store` bleibt. Foto-Detail und Download unterstützen stabile `id`-Links (Token nur noch kompatibler Alias).
 

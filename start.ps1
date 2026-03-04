@@ -75,13 +75,26 @@ $installArgs = @(
     '-SupervisorLog',
     $supervisorLog
 )
-$installProc = Start-Process -FilePath 'powershell.exe' -ArgumentList $installArgs -Wait -PassThru -WindowStyle Hidden
-if ($installProc.ExitCode -ne 0) {
+$installOutput = @()
+try {
+    $installOutput = & powershell.exe @installArgs 2>&1
+    $installExitCode = $LASTEXITCODE
+} catch {
+    $installExitCode = 1
+    $installOutput = @('DCC_DOWNLOAD_FAILED')
+}
+
+if ($installExitCode -ne 0) {
     $state.status = 'ERROR'
     $state.last_heartbeat = (Get-Date).ToString('s')
     Save-PhotoboxState -Config $config -State $state
 
-    $msg = 'digiCamControl fehlt oder Installation fehlgeschlagen. Start abgebrochen, kein Restart-Loop.'
+    $installCode = ($installOutput | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1)
+    if ([string]::IsNullOrWhiteSpace($installCode)) {
+        $installCode = 'DCC_DOWNLOAD_FAILED'
+    }
+
+    $msg = "digiCamControl fehlt oder Installation fehlgeschlagen: $installCode. Start abgebrochen, kein Restart-Loop."
     Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
     Write-Error $msg
     exit 1
@@ -134,7 +147,7 @@ if (-not $dccReady) {
     $state.last_heartbeat = (Get-Date).ToString('s')
     Save-PhotoboxState -Config $config -State $state
 
-    $msg = 'digiCamControl Webserver nicht aktiv (Settings -> Webserver -> Use web server, danach Neustart). Start abgebrochen.'
+    $msg = 'DCC_WEBSERVER_NOT_READY: digiCamControl Webserver nicht aktiv. Bitte in digiCamControl unter Settings -> Webserver -> Use web server aktivieren und digiCamControl neu starten. Start abgebrochen.'
     Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
     Write-Error $msg
     exit 1
