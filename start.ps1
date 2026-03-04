@@ -39,7 +39,9 @@ function Ensure-FirewallPort5513 {
 function Get-DigiCamControlExecutablePath {
     $paths = @(
         'C:\Program Files\digiCamControl\digiCamControl.exe',
-        'C:\Program Files (x86)\digiCamControl\digiCamControl.exe'
+        'C:\Program Files (x86)\digiCamControl\digiCamControl.exe',
+        'C:\Program Files\digiCamControl\CameraControl.exe',
+        'C:\Program Files (x86)\digiCamControl\CameraControl.exe'
     )
 
     foreach ($path in $paths) {
@@ -109,7 +111,13 @@ try {
     throw
 }
 
-$dccProcess = Get-Process -Name 'digiCamControl' -ErrorAction SilentlyContinue | Select-Object -First 1
+$dccProcess = $null
+foreach ($processName in @('digiCamControl', 'CameraControl')) {
+    $dccProcess = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $dccProcess) {
+        break
+    }
+}
 if ($null -eq $dccProcess) {
     $dccExe = Get-DigiCamControlExecutablePath
     if ([string]::IsNullOrWhiteSpace($dccExe)) {
@@ -117,7 +125,7 @@ if ($null -eq $dccProcess) {
         $state.last_heartbeat = (Get-Date).ToString('s')
         Save-PhotoboxState -Config $config -State $state
 
-        $msg = 'digiCamControl.exe nicht gefunden. Start abgebrochen.'
+        $msg = 'digiCamControl/CameraControl EXE nicht gefunden. Start abgebrochen.'
         Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
         Write-Error $msg
         exit 1
@@ -237,6 +245,7 @@ $state.php_pid = $phpProcess.Id
 $state.watcher_active = $true
 $state.last_heartbeat = (Get-Date).ToString('s')
 $state.status = 'RUNNING'
+
 Save-PhotoboxState -Config $config -State $state
 
 $crashCount = 0
@@ -264,6 +273,14 @@ try {
                 Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message ("php.log tail: {0}" -f $line)
             }
 
+
+            if ($null -ne $watcherBundle) {
+                Stop-PhotoboxWatcher -Bundle $watcherBundle
+                $watcherBundle = $null
+                $state.watcher_active = $false
+                Write-PhotoboxLog -Path $supervisorLog -Level 'WARN' -Message 'Watcher wegen PHP-Ausfall gestoppt.'
+            }
+
             if ($crashCount -ge $maxCrashes) {
                 $state.status = 'HALT'
                 $state.last_heartbeat = (Get-Date).ToString('s')
@@ -282,6 +299,11 @@ try {
             Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "PHP Prozess neu gestartet (PID $($phpProcess.Id))."
             $state.php_pid = $phpProcess.Id
             $state.status = 'RUNNING'
+
+            if ($null -eq $watcherBundle) {
+                $watcherBundle = Start-PhotoboxWatcher -PhpExe $phpExe -Config $config -WatcherLog $watcherLog -LastImageMarker $lastImageMarker -WatcherErrorMarker $watcherErrorMarker
+                Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message 'Watcher nach PHP-Neustart wieder gestartet.'
+            }
         }
 
         $watcherOk = $true

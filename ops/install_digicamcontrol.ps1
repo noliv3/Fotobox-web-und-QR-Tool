@@ -1,9 +1,9 @@
-Set-StrictMode -Version 2.0
-$ErrorActionPreference = 'Stop'
-
 param(
     [Parameter(Mandatory = $true)][string]$SupervisorLog
 )
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'Stop'
 
 function Write-PhaseLog {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -28,7 +28,9 @@ function Test-DigiCamControlInstalled {
 
     $knownExePaths = @(
         'C:\Program Files\digiCamControl\digiCamControl.exe',
-        'C:\Program Files (x86)\digiCamControl\digiCamControl.exe'
+        'C:\Program Files (x86)\digiCamControl\digiCamControl.exe',
+        'C:\Program Files\digiCamControl\CameraControl.exe',
+        'C:\Program Files (x86)\digiCamControl\CameraControl.exe'
     )
 
     foreach ($path in $knownExePaths) {
@@ -58,9 +60,12 @@ function Test-DigiCamControlInstalled {
 
         $installLocation = [string]$entry.InstallLocation
         if (-not [string]::IsNullOrWhiteSpace($installLocation)) {
-            $exeFromInstallLocation = Join-Path $installLocation 'digiCamControl.exe'
-            if (Test-Path -LiteralPath $exeFromInstallLocation) {
-                $global:DccExe = $exeFromInstallLocation
+            foreach ($exeName in @('digiCamControl.exe', 'CameraControl.exe')) {
+                $exeFromInstallLocation = Join-Path $installLocation $exeName
+                if (Test-Path -LiteralPath $exeFromInstallLocation) {
+                    $global:DccExe = $exeFromInstallLocation
+                    break
+                }
             }
 
             $remoteFromInstallLocation = Join-Path $installLocation 'CameraControlRemoteCmd.exe'

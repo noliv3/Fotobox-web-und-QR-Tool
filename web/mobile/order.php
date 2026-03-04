@@ -74,13 +74,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $name = sanitizeGuestName((string) ($_POST['name'] ?? ''));
-    $email = mb_substr(trim((string) ($_POST['email'] ?? '')), 0, 160);
+    $email = textSubstr(trim((string) ($_POST['email'] ?? '')), 0, 160);
     $shippingEnabled = (($_POST['shipping_enabled'] ?? '') === '1');
 
-    $addrStreet = mb_substr(trim((string) ($_POST['addr_street'] ?? '')), 0, 160);
-    $addrZip = mb_substr(trim((string) ($_POST['addr_zip'] ?? '')), 0, 30);
-    $addrCity = mb_substr(trim((string) ($_POST['addr_city'] ?? '')), 0, 120);
-    $addrCountry = mb_substr(trim((string) ($_POST['addr_country'] ?? '')), 0, 120);
+    $addrStreet = textSubstr(trim((string) ($_POST['addr_street'] ?? '')), 0, 160);
+    $addrZip = textSubstr(trim((string) ($_POST['addr_zip'] ?? '')), 0, 30);
+    $addrCity = textSubstr(trim((string) ($_POST['addr_city'] ?? '')), 0, 120);
+    $addrCountry = textSubstr(trim((string) ($_POST['addr_country'] ?? '')), 0, 120);
 
     if ($name === '' || $email === '') {
         orderErrorPage('Pflichtfelder fehlen', 'Name und E-Mail sind erforderlich.');
