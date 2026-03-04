@@ -33,28 +33,59 @@ if ($order === null) {
 } else {
     $priceCents = (int) ($order['price_cents'] ?? 0);
     $paypalUrl = trim((string) ($order['paypal_url'] ?? ''));
+    if ($paypalUrl === '') {
+        $paypalUrl = 'https://paypal.me/noliv3/' . number_format($priceCents / 100, 2, '.', '');
+    }
     ?>
     <div class="panel">
         <h2>Bestellung abgeschlossen</h2>
-        <p><strong>Bestellnummer:</strong> #<?= (int) $order['id'] ?></p>
-        <p><strong>Datum:</strong> <?= date('d.m.Y H:i', (int) ($order['created_at'] ?? nowTs())) ?></p>
-        <p><strong>Anzahl Fotos:</strong> <?= (int) ($order['photo_count'] ?? 0) ?></p>
-        <p><strong>Typ:</strong> <?= ((int) ($order['shipping_enabled'] ?? 0)) === 1 ? 'Versand' : 'Abholung' ?></p>
-        <p><strong>Preis:</strong> <?= number_format($priceCents / 100, 2, ',', '.') ?> EUR</p>
+        <div class="order-done-summary">
+            <p><strong>Bestellnummer:</strong> #<?= (int) $order['id'] ?></p>
+            <p><strong>Datum:</strong> <?= date('d.m.Y H:i', (int) ($order['created_at'] ?? nowTs())) ?></p>
+            <p><strong>Anzahl Fotos:</strong> <?= (int) ($order['photo_count'] ?? 0) ?></p>
+            <p><strong>Typ:</strong> <?= ((int) ($order['shipping_enabled'] ?? 0)) === 1 ? 'Versand' : 'Abholung' ?></p>
+            <p><strong>Preis:</strong> <?= number_format($priceCents / 100, 2, ',', '.') ?> EUR</p>
+        </div>
 
-        <h3>PayPal.me Zahlung</h3>
-        <?php if ($paypalUrl !== ''): ?>
-            <p><img src="/mobile/qr.php?d=<?= urlencode($paypalUrl) ?>" alt="PayPal QR-Code" width="220" height="220"></p>
-            <p><a href="<?= mobileEsc($paypalUrl) ?>" target="_blank" rel="noopener noreferrer"><?= mobileEsc($paypalUrl) ?></a></p>
-        <?php else: ?>
-            <p>PayPal-Link ist derzeit nicht konfiguriert.</p>
-        <?php endif; ?>
+        <div class="payment-steps">
+            <h3>Zahlung in 3 Schritten</h3>
+
+            <div class="payment-step">
+                <span class="step-no">1</span>
+                <div>
+                    <strong>WLAN trennen</strong>
+                    <p>Bitte Photobox-WLAN kurz verlassen und Mobilfunk aktivieren.</p>
+                </div>
+            </div>
+
+            <div class="payment-step">
+                <span class="step-no">2</span>
+                <div>
+                    <strong>PayPal oeffnen</strong>
+                    <p>Der Link enthaelt den Betrag bereits vorausgefuellt.</p>
+                    <p>
+                        <a class="button" href="<?= mobileEsc($paypalUrl) ?>" target="_blank" rel="noopener noreferrer">PayPal jetzt oeffnen</a>
+                    </p>
+                    <p class="muted"><a href="<?= mobileEsc($paypalUrl) ?>" target="_blank" rel="noopener noreferrer"><?= mobileEsc($paypalUrl) ?></a></p>
+                </div>
+            </div>
+
+            <div class="payment-step">
+                <span class="step-no">3</span>
+                <div>
+                    <strong>Betrag bestaetigen und senden</strong>
+                    <p>Bitte genau <strong><?= number_format($priceCents / 100, 2, ',', '.') ?> EUR</strong> bezahlen.</p>
+                </div>
+            </div>
+        </div>
+
+        <p><img src="/mobile/qr.php?d=<?= urlencode($paypalUrl) ?>" alt="PayPal QR-Code" width="220" height="220"></p>
 
         <?php if (trim((string) ($order['zip_path'] ?? '')) === ''): ?>
             <p>ZIP derzeit nicht verfuegbar.</p>
         <?php endif; ?>
 
-        <p>Zahlung benoetigt Internet (Mobilfunk). Photobox-WLAN ist offline.</p>
+        <p>Zahlung benoetigt Internet. Falls kein Netz: kurz WLAN wechseln und dann den PayPal-Button nutzen.</p>
         <p>Bestellungen werden nur mit vollstaendiger Adresse + E-Mail erfuellt.</p>
         <p>Nachtraegliche Aenderungen sind nur innerhalb von 24 Stunden moeglich.</p>
     </div>

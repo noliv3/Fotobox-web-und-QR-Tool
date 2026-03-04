@@ -258,3 +258,42 @@ input[type="text"], input[type="time"], input[type="number"] {
 .order-shipping-fields {
   transition: all .2s ease;
 }
+
+.order-done-summary p {
+  margin: .25rem 0;
+}
+
+.payment-steps {
+  margin-top: .8rem;
+  margin-bottom: .9rem;
+}
+
+.payment-step {
+  display: grid;
+  grid-template-columns: 2.1rem 1fr;
+  gap: .65rem;
+  align-items: start;
+  border: 1px solid #d8deea;
+  border-radius: 11px;
+  padding: .65rem;
+  background: #fbfdff;
+  margin-bottom: .55rem;
+}
+
+.payment-step p {
+  margin: .3rem 0 0 0;
+}
+
+.step-no {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 2px solid #0f4fa8;
+  color: #0f4fa8;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  line-height: 1;
+}

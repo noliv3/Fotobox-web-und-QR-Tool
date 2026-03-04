@@ -109,7 +109,12 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
 </head>
 <body>
 <main class="container">
-    <h1>Admin</h1>
+    <header class="admin-head">
+        <h1>Admin</h1>
+        <div class="camera-preview-wrap" aria-label="Kamera-Vorschau">
+            <img id="camera-preview" src="/admin/camera_preview.php" alt="Kamera Vorschau" width="80" height="80">
+        </div>
+    </header>
     <nav class="tabs">
         <a class="<?= $tab === 'jobs' ? 'is-active' : '' ?>" href="/admin/?tab=jobs">Druckauftraege</a>
         <a class="<?= $tab === 'orders' ? 'is-active' : '' ?>" href="/admin/?tab=orders">Bestellungen</a>
@@ -267,6 +272,13 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
   const connect = document.getElementById('connect-cp1500');
   const ipInput = document.getElementById('cp1500-ip');
   const status = document.getElementById('printer-status');
+  const camPreview = document.getElementById('camera-preview');
+  if (camPreview) {
+    const reloadPreview = () => {
+      camPreview.src = '/admin/camera_preview.php?t=' + Date.now();
+    };
+    setInterval(reloadPreview, 4000);
+  }
   if (!select || !save || !refresh || !connect || !ipInput || !status) return;
 
   function setStatus(text) {
