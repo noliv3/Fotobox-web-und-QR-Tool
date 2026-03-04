@@ -536,26 +536,29 @@ function isAdminEnabled(?array $cfg = null): bool
 {
     $cfg = $cfg ?? config();
     $code = trim((string) ($cfg['admin_code'] ?? ''));
-    return $code !== '' && $code !== 'CHANGE_ME_ADMIN_CODE';
+    if ($code !== '' && $code !== 'CHANGE_ME_ADMIN_CODE') {
+        return true;
+    }
+
+    $hash = trim((string) ($cfg['admin_password_hash'] ?? ''));
+    return $hash !== '' && $hash !== 'CHANGE_ME';
 }
 
 function adminCodeMatches(?string $providedCode, ?array $cfg = null): bool
 {
     $cfg = $cfg ?? config();
-    if (!isAdminEnabled($cfg)) {
+    $expected = trim((string) ($cfg['admin_code'] ?? ''));
+    if ($expected === '' || $expected === 'CHANGE_ME_ADMIN_CODE') {
         return false;
     }
 
     $provided = trim((string) $providedCode);
-    $expected = trim((string) ($cfg['admin_code'] ?? ''));
     if ($provided === '') {
         return false;
     }
 
     return hash_equals($expected, $provided);
 }
-
-
 function createPrintTicket(string $photoId): string
 {
     if (session_status() !== PHP_SESSION_ACTIVE) {

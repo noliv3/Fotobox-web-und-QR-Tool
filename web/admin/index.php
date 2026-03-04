@@ -22,8 +22,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($action === 'retry_job') {
         $jobId = (int) ($_POST['job_id'] ?? 0);
         if ($jobId > 0) {
-            $stmt = $pdo->prepare("UPDATE print_jobs SET status = 'pending', error = NULL WHERE id = :id");
-            $stmt->execute([':id' => $jobId]);
+            $stmt = $pdo->prepare(
+                "UPDATE print_jobs SET status = 'queued', error = NULL, last_error = NULL, last_error_at = NULL, "
+                . "next_retry_at = NULL, spool_job_id = NULL, document_name = NULL, updated_at = :updatedAt WHERE id = :id"
+            );
+            $stmt->execute([
+                ':id' => $jobId,
+                ':updatedAt' => nowTs(),
+            ]);
             adminActionLog('retry_job', ['id' => $jobId]);
         }
         header('Location: /admin/?tab=jobs', true, 302);
@@ -47,7 +53,7 @@ if (!in_array($tab, ['jobs', 'orders', 'photos', 'printer'], true)) {
     $tab = 'jobs';
 }
 
-$jobs = $pdo->query('SELECT j.id, j.photo_id, j.status, j.error, j.created_ts, p.id AS photo_exists FROM print_jobs j LEFT JOIN photos p ON p.id = j.photo_id ORDER BY j.id DESC LIMIT 120')->fetchAll();
+$jobs = $pdo->query('SELECT j.id, j.photo_id, j.status, j.error, j.last_error, j.created_ts, p.id AS photo_exists FROM print_jobs j LEFT JOIN photos p ON p.id = j.photo_id ORDER BY j.id DESC LIMIT 120')->fetchAll();
 $orders = $pdo->query('SELECT id, created_at, name, email, photo_count, shipping_enabled, price_cents, status, zip_path FROM orders ORDER BY id DESC LIMIT 120')->fetchAll();
 $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 240')->fetchAll();
 ?>
@@ -80,9 +86,9 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
                         <td><?= htmlspecialchars((string) $job['status'], ENT_QUOTES, 'UTF-8') ?></td>
                         <td><?= date('Y-m-d H:i:s', (int) $job['created_ts']) ?></td>
                         <td><?= $job['photo_exists'] ? htmlspecialchars((string) $job['photo_id'], ENT_QUOTES, 'UTF-8') : 'Foto geloescht' ?></td>
-                        <td><?= htmlspecialchars((string) ($job['error'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= htmlspecialchars((string) (($job['last_error'] ?? '') !== '' ? $job['last_error'] : ($job['error'] ?? '')), ENT_QUOTES, 'UTF-8') ?></td>
                         <td>
-                            <?php if ((string) $job['status'] === 'error'): ?>
+                            <?php if (in_array((string) $job['status'], ['error', 'failed_hard', 'needs_attention', 'paused', 'canceled'], true)): ?>
                                 <form method="post" class="inline">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                     <input type="hidden" name="action" value="retry_job">
@@ -150,8 +156,15 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
             <div class="inline">
                 <label for="printer-select">Drucker</label>
                 <select id="printer-select"></select>
+                <button type="button" id="refresh-printers">Neu laden</button>
                 <button type="button" id="save-printer" data-csrf-token="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">Speichern</button>
             </div>
+            <div class="inline" style="margin-top:.6rem;">
+                <label for="cp1500-ip">CP1500 IP</label>
+                <input id="cp1500-ip" type="text" inputmode="decimal" placeholder="z. B. 192.168.8.50">
+                <button type="button" id="connect-cp1500" data-csrf-token="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">CP1500 koppeln</button>
+            </div>
+            <p id="printer-status" class="muted" style="margin-top:.6rem;">Nur Erkennung/Verbindungstest. Kein Testdruck erforderlich.</p>
         </section>
     <?php endif; ?>
 </main>
@@ -164,6 +177,7 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
     if (!contentType.includes('application/json')) throw new Error('INVALID_CONTENT_TYPE');
     return response.json();
   }
+
   const delButtons = document.querySelectorAll('[data-delete-photo]');
   delButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -184,36 +198,109 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
 
   const select = document.getElementById('printer-select');
   const save = document.getElementById('save-printer');
-  if (!select || !save) return;
+  const refresh = document.getElementById('refresh-printers');
+  const connect = document.getElementById('connect-cp1500');
+  const ipInput = document.getElementById('cp1500-ip');
+  const status = document.getElementById('printer-status');
+  if (!select || !save || !refresh || !connect || !ipInput || !status) return;
 
-  fetch('/admin/api_printers.php')
-    .then(parseJsonResponse)
-    .then((res) => {
-      if (!res || !res.ok) return;
-      const current = res.current || '';
-      const opt0 = document.createElement('option');
-      opt0.value = '';
-      opt0.textContent = '(Auto)';
-      select.appendChild(opt0);
-      (res.printers || []).forEach((name) => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        select.appendChild(opt);
-      });
-      select.value = current;
+  function setStatus(text) {
+    status.textContent = text;
+  }
+
+  function fillSelect(res) {
+    select.innerHTML = '';
+    const current = res.current || '';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = '(Auto)';
+    select.appendChild(opt0);
+    (res.printers || []).forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
     });
+    select.value = current;
+  }
+
+  function renderDiag(res) {
+    const cp = res.cp1500 || {};
+    const names = Array.isArray(cp.detectedNames) && cp.detectedNames.length > 0
+      ? cp.detectedNames.join(', ')
+      : 'kein CP1500 erkannt';
+    const spool = cp.spoolerRunning === true ? 'Spooler: läuft' : (cp.spoolerRunning === false ? 'Spooler: gestoppt' : 'Spooler: unbekannt');
+    setStatus(`${spool} | CP1500: ${names}`);
+  }
+
+  function loadPrinters() {
+    fetch('/admin/api_printers.php')
+      .then(parseJsonResponse)
+      .then((res) => {
+        if (!res || !res.ok) {
+          setStatus('Druckerstatus konnte nicht geladen werden.');
+          return;
+        }
+        fillSelect(res);
+        renderDiag(res);
+      })
+      .catch(() => setStatus('Druckerstatus konnte nicht geladen werden.'));
+  }
+
+  refresh.addEventListener('click', loadPrinters);
 
   save.addEventListener('click', () => {
     const csrfToken = save.getAttribute('data-csrf-token') || '';
-    const body = new URLSearchParams({ name: select.value || '', csrf_token: csrfToken });
+    const body = new URLSearchParams({ name: select.value || '', csrf_token: csrfToken, action: 'save' });
     fetch('/admin/api_printers.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
       body
-    }).then(parseJsonResponse).catch(() => {});
+    }).then(parseJsonResponse)
+      .then((res) => {
+        if (res && res.ok) {
+          setStatus('Drucker gespeichert.');
+        }
+      })
+      .catch(() => setStatus('Drucker konnte nicht gespeichert werden.'));
   });
+
+  connect.addEventListener('click', () => {
+    const ip = (ipInput.value || '').trim();
+    const csrfToken = connect.getAttribute('data-csrf-token') || '';
+    if (!ip) {
+      setStatus('Bitte zuerst die CP1500-IP eingeben.');
+      return;
+    }
+
+    setStatus('CP1500-Kopplung läuft...');
+    const body = new URLSearchParams({ action: 'auto_connect_cp1500', ip, csrf_token: csrfToken });
+    fetch('/admin/api_printers.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body
+    }).then(parseJsonResponse)
+      .then((res) => {
+        if (!res || !res.result) {
+          setStatus('CP1500-Kopplung fehlgeschlagen.');
+          return;
+        }
+        fillSelect(res);
+        const ok = res.result.ok === true;
+        const name = res.result.installedName || 'unbekannt';
+        const err = res.result.error || '';
+        if (ok) {
+          setStatus(`CP1500 erkannt: ${name}`);
+        } else {
+          setStatus(`CP1500 nicht gekoppelt (${err || 'unbekannter Fehler'}).`);
+        }
+      })
+      .catch(() => setStatus('CP1500-Kopplung fehlgeschlagen.'));
+  });
+
+  loadPrinters();
 })();
 </script>
 </body>
 </html>
+

@@ -174,8 +174,8 @@
   - Zweck: Optionaler Admin-Login/Platzhalterbereich
   - Request: `GET|POST password`
   - Response: HTML Login oder "Admin OK"
-  - Fehlerfälle: `403` wenn `admin_password_hash` fehlt oder `CHANGE_ME`
-  - Security: Session-Cookie `pb_admin`, `password_verify` gegen `admin_password_hash`
+  - Fehlerfälle: Redirect auf `/mobile/`, wenn weder `admin_code` noch `admin_password_hash` aktiv konfiguriert ist
+  - Security: Session-Cookie `pb_admin`, Auth via `admin_code` oder `password_verify` gegen `admin_password_hash`
 
 ## Ops (Windows)
 ### 2026-02-27 – Supervisor, Watcher, Failure-Modes
@@ -245,6 +245,7 @@
 
 ## Changelog
 
+- 2026-03-04 – Admin/Drucker-Wartung: `shared/bootstrap.php` aktiviert Admin jetzt, sobald `admin_code` **oder** `admin_password_hash` gesetzt ist (Passwort-only funktioniert wieder). `web/admin/index.php` setzt `retry_job` auf `queued` inkl. Reset von Retry-/Spool-Feldern und bietet im Drucker-Tab Spooler/CP1500-Status + `CP1500 koppeln` per IP. Neues Script `ops/print/discover_cp1500.ps1` prueft Erkennung und versucht bei Bedarf die lokale Windows-Installation (best-effort, klare Fehlercodes).
 - 2026-03-04 – Order mbstring-Fallback + Supervisor-Kopplung: `shared/utils.php` ergänzt `textSubstr()` (Fallback `mb_substr` -> `iconv_substr` -> `substr`) und `web/mobile/order.php` nutzt den Helper, sodass fehlendes `mbstring` keinen 500er mehr auslöst. Zusätzlich stoppt `start.ps1` den Watcher bei PHP-Ausfall sofort und startet ihn erst nach erfolgreichem PHP-Restart neu.
 - 2026-03-04 – digiCamControl EXE-Namenskompatibilität + Param-Fix: `start.ps1` und `ops/install_digicamcontrol.ps1` erkennen sowohl `digiCamControl.exe` als auch `CameraControl.exe` in `C:\Program Files\digiCamControl` und `C:\Program Files (x86)\digiCamControl`. Zusätzlich steht `param(...)` in `ops/install_digicamcontrol.ps1` jetzt am Dateianfang, damit `-SupervisorLog` unter PowerShell mit `Set-StrictMode` zuverlässig gebunden wird und der Start nicht fälschlich mit `DCC_DOWNLOAD_FAILED` abbricht.
 - 2026-03-04 – digiCamControl Auto-Install Stabilisierung: `ops/install_digicamcontrol.ps1` prüft Installation in Reihenfolge über feste EXE-Pfade und HKLM-Uninstall-Keys, setzt bei Treffer `DccExe`/`DccRemoteExe`, lädt Installer robust mit TLS1.2 + Redirect-Limit (Primary `...2.1.7.exe`, Fallback `...2.1.7.0.exe`) nach `E:\photobooth\runtime\downloads\digiCamControlsetup_2.1.7.exe`, validiert >20MB und nutzt bei Downloadfehlern einen lokalen Offline-Fallback. Fehler liefern genau einen Code-String (`DCC_DOWNLOAD_FAILED_OFFLINE|DCC_DOWNLOAD_FAILED|DCC_INSTALL_EXITCODE_*|DCC_INSTALL_NOT_DETECTED`). `start.ps1` loggt bei Installerfehlern exakt eine eindeutige Grundzeile mit Code und bricht fail-fast ab; der 5513-Healthcheck meldet bei Fehlschlag `DCC_WEBSERVER_NOT_READY` mit klarem Hinweis auf Aktivierung des DCC-Webservers in den Settings.
@@ -286,3 +287,4 @@
 - 2026-02-27 – Projektstruktur aktualisiert: Segmentpfade und Verantwortlichkeiten ergänzt; Hinweis zu `data/` und `.gitkeep` ergänzt.
 - 2026-02-27 – Verbindlichen Dokumentationsstandard, Boundaries, Decision-Log-Format und Pflichtinhalte ergänzt.
 - 2026-02-27 – Initiale Arbeitsregeln und Rollen dokumentiert.
+

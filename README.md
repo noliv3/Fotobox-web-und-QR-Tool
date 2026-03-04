@@ -47,7 +47,8 @@ Wichtige Schlüssel:
 - `paypal_me_base_url` (z. B. `https://paypal.me/DEINNAME`)
 - `order_zip_dir` (Default: `data/orders`)
 - `order_max_age_hours` (legacy, aktuell ohne Wirkung auf Bestellfreigabe)
-- `admin_password_hash` (`CHANGE_ME` = Admin deaktiviert)
+- `admin_password_hash` (`CHANGE_ME` = deaktiviert, alternativ zu `admin_code`)
+- `admin_code` (`CHANGE_ME_ADMIN_CODE` = deaktiviert, alternativ zu `admin_password_hash`)
 - `rate_limit_max`, `rate_limit_window_seconds`
 
 ## Betrieb
@@ -104,8 +105,9 @@ Wichtige Schlüssel:
 ### 2026-02-27 – Galerie Auth-Modell
 - `/gallery/` ist öffentlich und zeigt read-only Status, letzte Fotos und letzte Jobs ohne Login.
 - `/gallery/admin.php` ist optional geschützt (Session-Cookie `pb_admin`).
-- Admin ist nur aktiv, wenn `admin_password_hash` in `shared/config.php` gesetzt ist und nicht `CHANGE_ME` ist.
-- Ist Admin nicht aktiv, liefert `/gallery/admin.php` einen klaren `403`-Hinweis zur Aktivierung.
+- Admin ist aktiv, wenn mindestens eine Methode gesetzt ist: `admin_code` oder `admin_password_hash`.
+- Fuer reinen Passwort-Login `admin_code` auf `CHANGE_ME_ADMIN_CODE` lassen und `admin_password_hash` setzen.
+- Ist beides deaktiviert, redirectet `/admin/` wie bisher auf `/mobile/`.
 - Passwort-Hash erzeugen: `php -r "echo password_hash('DEINPASS', PASSWORD_DEFAULT), PHP_EOL;"`
 
 ### Initialisieren
@@ -151,6 +153,7 @@ php import/print_worker.php run
 
 ## Changelog
 
+- 2026-03-04 – Drucker/Admin-Wartung erweitert: Admin-Login akzeptiert jetzt konfiguriertes Passwort auch ohne gesetzten `admin_code` (oder weiterhin Code). Der Drucker-Tab (`/admin/?tab=printer`) zeigt Spooler/CP1500-Erkennung, bietet `CP1500 koppeln` per WLAN-IP und setzt bei Erfolg den Druckernamen automatisch. Job-Retry setzt Druckjobs wieder konsistent auf `queued` statt Legacy-`pending`.
 - 2026-03-04 – Bestell-Flow ohne mbstring gehärtet: `shared/utils.php` nutzt mit `textSubstr()` jetzt einen Fallback auf `iconv_substr`/`substr`, und `web/mobile/order.php` verwendet diesen Helper für E-Mail/Adressfelder. Damit führt fehlendes `mbstring` nicht mehr zu `500` in `order.php` beim POST.
 - 2026-03-04 – Supervisor-Worker-Kopplung verschärft: Bei PHP-Webserver-Absturz stoppt `start.ps1` den Watcher sofort und startet ihn erst nach erfolgreichem PHP-Restart wieder, damit ohne laufende Webapp keine Import-/Worker-Aktivität weiterläuft.
 - 2026-03-04 – digiCamControl EXE-Erkennung korrigiert: `start.ps1` und `ops/install_digicamcontrol.ps1` erkennen jetzt sowohl `digiCamControl.exe` als auch `CameraControl.exe` (inkl. `Program Files` und `Program Files (x86)`). Zusätzlich wurde der `param(...)`-Block in `ops/install_digicamcontrol.ps1` an den Dateianfang verschoben, damit `-SupervisorLog` bei direktem und indirektem Aufruf zuverlässig gebunden wird.
@@ -189,3 +192,4 @@ php import/print_worker.php run
 - 2026-02-27 – MVP implementiert: Import, Thumb-Generierung, SQLite-Index, mobile Galerie mit Zeitfenster/Alle-Fotos, Session-Bestellungen, Druckqueue-API, Druckworker, Cleanup.
 - 2026-02-27 – Hardware-Setup und optionale Future-Themen (i2i/Anime nur Placeholder) dokumentiert.
 - 2026-02-27 – Security/Privacy Betriebsregeln für den MVP ergänzt.
+
