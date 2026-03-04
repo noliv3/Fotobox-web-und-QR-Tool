@@ -36,6 +36,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
     }
 
+    if ($action === 'cancel_job') {
+        $jobId = (int) ($_POST['job_id'] ?? 0);
+        if ($jobId > 0) {
+            $stmt = $pdo->prepare(
+                "UPDATE print_jobs SET status = 'canceled', error = NULL, last_error = 'MANUAL_CANCELED', "
+                . "last_error_at = :updatedAt, next_retry_at = NULL, spool_job_id = NULL, document_name = NULL, updated_at = :updatedAt WHERE id = :id"
+            );
+            $stmt->execute([
+                ':id' => $jobId,
+                ':updatedAt' => nowTs(),
+            ]);
+            adminActionLog('cancel_job', ['id' => $jobId]);
+        }
+        header('Location: /admin/?tab=jobs', true, 302);
+        exit;
+    }
+
     if ($action === 'complete_order') {
         $orderId = (int) ($_POST['order_id'] ?? 0);
         if ($orderId > 0) {
@@ -53,7 +70,7 @@ if (!in_array($tab, ['jobs', 'orders', 'photos', 'printer'], true)) {
     $tab = 'jobs';
 }
 
-$jobs = $pdo->query('SELECT j.id, j.photo_id, j.status, j.error, j.last_error, j.created_ts, p.id AS photo_exists FROM print_jobs j LEFT JOIN photos p ON p.id = j.photo_id ORDER BY j.id DESC LIMIT 120')->fetchAll();
+$jobs = $pdo->query('SELECT j.id, j.photo_id, j.status, j.error, j.last_error, j.created_ts, j.printfile_path, p.id AS photo_exists FROM print_jobs j LEFT JOIN photos p ON p.id = j.photo_id ORDER BY j.id DESC LIMIT 120')->fetchAll();
 $orders = $pdo->query('SELECT id, created_at, name, email, photo_count, shipping_enabled, price_cents, status, zip_path FROM orders ORDER BY id DESC LIMIT 120')->fetchAll();
 $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 240')->fetchAll();
 ?>
@@ -88,12 +105,26 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
                         <td><?= $job['photo_exists'] ? htmlspecialchars((string) $job['photo_id'], ENT_QUOTES, 'UTF-8') : 'Foto geloescht' ?></td>
                         <td><?= htmlspecialchars((string) (($job['last_error'] ?? '') !== '' ? $job['last_error'] : ($job['error'] ?? '')), ENT_QUOTES, 'UTF-8') ?></td>
                         <td>
-                            <?php if (in_array((string) $job['status'], ['error', 'failed_hard', 'needs_attention', 'paused', 'canceled'], true)): ?>
+                            <?php
+                            $status = (string) $job['status'];
+                            $hasPrintfilePath = trim((string) ($job['printfile_path'] ?? '')) !== '';
+                            $canRetry = in_array($status, ['error', 'failed_hard', 'needs_attention', 'paused', 'canceled'], true) && $hasPrintfilePath;
+                            $canCancel = in_array($status, ['queued', 'sending', 'spooled', 'needs_attention', 'paused', 'error', 'failed_hard'], true);
+                            ?>
+                            <?php if ($canRetry): ?>
                                 <form method="post" class="inline">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                     <input type="hidden" name="action" value="retry_job">
                                     <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
                                     <button type="submit">Retry</button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if ($canCancel): ?>
+                                <form method="post" class="inline">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="action" value="cancel_job">
+                                    <input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>">
+                                    <button type="submit" class="danger">Abbrechen</button>
                                 </form>
                             <?php endif; ?>
                         </td>

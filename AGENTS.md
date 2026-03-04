@@ -252,6 +252,7 @@
 
 ## Changelog
 
+- 2026-03-04 – Admin-Action Druckjob-Abbruch: `web/admin/index.php` ergänzt POST-Action `cancel_job`, die Jobs auf `canceled` setzt und Retry-/Spool-Metadaten zurücksetzt (`next_retry_at`, `spool_job_id`, `document_name`). In der Jobs-Tabelle gibt es dafür einen Button `Abbrechen`; `Retry` wird nur noch bei vorhandenem `printfile_path` angeboten.
 - 2026-03-04 – Print-Worker Diagnose- und Statusfix: `import/print_worker.php` akzeptiert `printer_status.errorState` Werte `Normal|Idle|Ready` als nicht-fehlerhaft. Submit-Fehler `VIRTUAL_PRINTER_UNSUPPORTED|PRINTER_NOT_FOUND` bleiben `needs_attention`, `JOB_ID_NOT_FOUND` ist retrybar (`queued`) und bestehende `needs_attention`-Jobs mit diesem Fehler werden automatisch wieder eingereiht. `ops/print/submit_job.ps1` liefert für virtuelle Drucker (`Microsoft Print to PDF`/`OneNote`) den klaren Fehlercode `VIRTUAL_PRINTER_UNSUPPORTED`.
 - 2026-03-04 – Supervisor Pending/Worker Prefix-Fix: `start.ps1` ruft Pending-Count, `print_worker.php run` und stündliches Cleanup mit denselben PHP-Prefix-Args auf wie den Webserver-Start (`Get-PhpLaunchPlan`), damit die Queue auch bei Fallback-Start (`-n`) korrekt erkannt und abgearbeitet wird.
 

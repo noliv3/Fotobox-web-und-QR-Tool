@@ -153,6 +153,7 @@ php import/print_worker.php run
 
 ## Changelog
 
+- 2026-03-04 – Admin-Jobabbruch ergänzt: Im Admin-Tab `Druckauftraege` gibt es jetzt die Aktion `Abbrechen`, die Jobs gezielt auf `canceled` setzt und Retry-/Spool-Felder zurücksetzt. `Retry` wird nur noch angeboten, wenn ein `printfile_path` vorhanden ist, damit fehlende Druckdateien nicht in sinnlose Wiederholungen laufen.
 - 2026-03-04 – Print-Worker Diagnose- und Statusfix: `import/print_worker.php` behandelt Druckerstatus `Normal|Idle|Ready` nicht mehr als Fehler, sodass Queue-Jobs abgearbeitet werden. Blockierende Fehler (`VIRTUAL_PRINTER_UNSUPPORTED`, `PRINTER_NOT_FOUND`) gehen auf `needs_attention`, während `JOB_ID_NOT_FOUND` retrybar bleibt und bestehende Alt-Jobs mit diesem Fehler automatisch wieder auf `queued` gesetzt werden. `ops/print/submit_job.ps1` erkennt virtuelle Drucker (z. B. `Microsoft Print to PDF`, `OneNote`) explizit als nicht unterstützte Zielgeräte.
 - 2026-03-04 – Supervisor Pending-Check korrigiert: `start.ps1` nutzt für Pending-Count, `print_worker.php run` und stündliches Cleanup dieselben PHP-Prefix-Args wie der Webserver (`Get-PhpLaunchPlan`), damit Queue-Jobs auch bei Fallback-Startmodus (`-n`) zuverlässig erkannt und verarbeitet werden.
 
