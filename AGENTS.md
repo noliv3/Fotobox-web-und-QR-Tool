@@ -80,12 +80,19 @@
 ### 2026-02-27 – Mobile API Dokumentation
 - Endpoint: `/mobile/api_print.php`
   - Zweck: Druckjob anlegen
-  - Request: `POST t`, Auth über Header `X-API-Key` oder Feld `print_api_key`
+  - Request: `POST t`, Auth über Session-CSRF (`X-CSRF-Token`/`csrf_token`) + `print_ticket`; optionaler Header `X-API-Key` nur wenn konfiguriert
   - Response: `{jobId:int}`
   - Fehlerfälle: `400 invalid_token`, `403 forbidden|outside_print_window`, `429 rate_limited`, `404 photo_not_found`, `503 print_not_configured`
-  - Security: API-Key + IP-Rate-Limit + Zeitfensterprüfung
+  - Security: Session-CSRF + Print-Ticket + optionaler API-Key + IP-Rate-Limit + Zeitfensterprüfung
   - Privacy: keine PII außer IP-basiertes Rate-Limit in `kv`
-  - Status/ToDo: Print ist nur mit gesetztem `print_api_key` aktiv (nicht leer, nicht `CHANGE_ME_PRINT_API_KEY`); sonst `503 print_not_configured`. Linux-Spooler aktiv; unter Windows endet der Job mit `error=NOT_IMPLEMENTED_WINDOWS_PRINT` (kein Re-Pending)
+  - Status/ToDo: Print ist aktiv, wenn Drucker gesetzt ist (`printer_name`) oder ein API-Key konfiguriert ist; sonst `503 print_not_configured`.
+
+- Endpoint: `/mobile/api_print_favs.php`
+  - Zweck: Erstellt 2 Druckjobs aus den 2 neuesten druckbaren Fotos der Merkliste
+  - Request: `POST`, Session-CSRF (`X-CSRF-Token`/`csrf_token`)
+  - Response: `{ok:true,status:"queued",count:2,job_ids:[...]}`
+  - Fehlerfälle: `400 no_favs|need_two_new_favs`, `429 rate_limited`, `503 queue_full|print_not_configured`
+  - Security: Session-gebunden, CSRF-prüfend, kein direkter Dateipfadzugriff
 
 - Endpoint: `/mobile/api_job.php`
   - Zweck: Jobstatus lesen
@@ -245,6 +252,7 @@
 
 ## Changelog
 
+- 2026-03-04 – Merkliste-Print (2 neue Bilder) + direkter Druck ohne API-Key-Zwang: Neuer Endpoint `web/mobile/api_print_favs.php` erstellt zwei Jobs aus den neuesten druckbaren Favoriten. `web/mobile/index.php` zeigt im Tab `Merkliste` den Button `2 Gemerkte drucken` (nur bei >=2 neuen druckbaren Bildern). `web/mobile/photo.php`/`api_print.php` aktivieren Drucken, sobald ein Drucker konfiguriert ist (`printer_name`) oder ein API-Key gesetzt ist.
 - 2026-03-04 – Admin/Drucker-Wartung: `shared/bootstrap.php` aktiviert Admin jetzt, sobald `admin_code` **oder** `admin_password_hash` gesetzt ist (Passwort-only funktioniert wieder). `web/admin/index.php` setzt `retry_job` auf `queued` inkl. Reset von Retry-/Spool-Feldern und bietet im Drucker-Tab Spooler/CP1500-Status + `CP1500 koppeln` per IP. Neues Script `ops/print/discover_cp1500.ps1` prueft Erkennung und versucht bei Bedarf die lokale Windows-Installation (best-effort, klare Fehlercodes).
 - 2026-03-04 – Order mbstring-Fallback + Supervisor-Kopplung: `shared/utils.php` ergänzt `textSubstr()` (Fallback `mb_substr` -> `iconv_substr` -> `substr`) und `web/mobile/order.php` nutzt den Helper, sodass fehlendes `mbstring` keinen 500er mehr auslöst. Zusätzlich stoppt `start.ps1` den Watcher bei PHP-Ausfall sofort und startet ihn erst nach erfolgreichem PHP-Restart neu.
 - 2026-03-04 – digiCamControl EXE-Namenskompatibilität + Param-Fix: `start.ps1` und `ops/install_digicamcontrol.ps1` erkennen sowohl `digiCamControl.exe` als auch `CameraControl.exe` in `C:\Program Files\digiCamControl` und `C:\Program Files (x86)\digiCamControl`. Zusätzlich steht `param(...)` in `ops/install_digicamcontrol.ps1` jetzt am Dateianfang, damit `-SupervisorLog` unter PowerShell mit `Set-StrictMode` zuverlässig gebunden wird und der Start nicht fälschlich mit `DCC_DOWNLOAD_FAILED` abbricht.
@@ -287,4 +295,6 @@
 - 2026-02-27 – Projektstruktur aktualisiert: Segmentpfade und Verantwortlichkeiten ergänzt; Hinweis zu `data/` und `.gitkeep` ergänzt.
 - 2026-02-27 – Verbindlichen Dokumentationsstandard, Boundaries, Decision-Log-Format und Pflichtinhalte ergänzt.
 - 2026-02-27 – Initiale Arbeitsregeln und Rollen dokumentiert.
+
+
 

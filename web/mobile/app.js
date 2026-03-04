@@ -218,6 +218,43 @@
         });
       });
     });
+    document.querySelectorAll('[data-print-favs-form]').forEach((form) => {
+      form.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const body = new URLSearchParams(new FormData(form));
+        fetch('/mobile/api_print_favs.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+          },
+          body,
+          credentials: 'same-origin'
+        }).then((res) => {
+          if (!res.ok) {
+            return res.json().catch(() => ({})).then((payload) => ({ ok: false, payload }));
+          }
+          return res.json().then((payload) => ({ ok: true, payload }));
+        }).then((result) => {
+          if (result.ok && result.payload && result.payload.ok === true) {
+            showToast('2 Druckjobs angelegt');
+            return;
+          }
+          const errorCode = (result.payload && result.payload.error) || '';
+          if (errorCode === 'need_two_new_favs') {
+            showToast('Mindestens 2 neue gemerkte Bilder nötig');
+            return;
+          }
+          if (errorCode === 'queue_full') {
+            showToast('Warteschlange voll');
+            return;
+          }
+          showToast('Druck derzeit nicht möglich');
+        }).catch(() => {
+          showToast('Druck derzeit nicht möglich');
+        });
+      });
+    });
   }
 
 
@@ -287,3 +324,4 @@
 
   window.showToast = showToast;
 })();
+

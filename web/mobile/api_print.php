@@ -28,7 +28,8 @@ if (nowTs() - (int) $photo['ts'] > ((int) $cfg['gallery_window_minutes'] * 60)) 
 }
 
 $configuredApiKey = trim((string) ($cfg['print_api_key'] ?? ''));
-$printConfigured = $configuredApiKey !== '' && $configuredApiKey !== 'CHANGE_ME_PRINT_API_KEY';
+$apiKeyConfigured = $configuredApiKey !== '' && $configuredApiKey !== 'CHANGE_ME_PRINT_API_KEY';
+$printConfigured = $apiKeyConfigured || getConfiguredPrinterName($pdo) !== '';
 if (!$printConfigured) {
     responseJson(['error' => 'print_not_configured'], 503);
 }
@@ -40,7 +41,7 @@ if (!verifyCsrfToken($csrfToken) || !consumePrintTicket($printTicket, (string) $
 }
 
 $apiKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
-if ($apiKey !== '' && (!is_string($apiKey) || !hash_equals($configuredApiKey, $apiKey))) {
+if ($apiKeyConfigured && $apiKey !== '' && (!is_string($apiKey) || !hash_equals($configuredApiKey, $apiKey))) {
     responseJson(['error' => 'forbidden'], 403);
 }
 
@@ -90,3 +91,4 @@ $update->execute([
 ]);
 
 responseJson(['ok' => true, 'job_id' => $jobId, 'status' => 'queued']);
+

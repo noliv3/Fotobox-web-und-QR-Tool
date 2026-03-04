@@ -146,13 +146,14 @@ php import/print_worker.php run
 ## Sicherheit & Datenschutz (MVP)
 - Keine direkten Dateipfade nach außen; nur tokenbasierte URLs (`t=...`).
 - Druck nur im Zeitfenster (`gallery_window_minutes`) erlaubt.
-- `api_print.php` verlangt API-Key und hat IP-Ratenlimit über SQLite-`kv`.
+- `api_print.php` nutzt Session-CSRF + Print-Ticket; optionaler API-Key wird nur geprüft, wenn gesetzt. IP-Ratenlimit läuft über SQLite-`kv`.
 - Eingaben validiert: Token-Format, Uhrzeit (`HH:MM`), Namenslänge/Zeichensatz.
 - `all.php`: `noindex` + `no-store` Header.
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
 
+- 2026-03-04 – Merkliste-Print (2 neue Bilder) + Druckfreigabe bei konfiguriertem Drucker: `/mobile/?view=favs` bietet jetzt `2 Gemerkte drucken` (wenn mindestens zwei neue druckbare Favoriten vorhanden sind) via neuem Endpoint `/mobile/api_print_favs.php`. Zusätzlich zeigt die Detailseite den Druckbutton, sobald ein Druckername gesetzt ist (`printer_name`) oder ein API-Key konfiguriert ist.
 - 2026-03-04 – Drucker/Admin-Wartung erweitert: Admin-Login akzeptiert jetzt konfiguriertes Passwort auch ohne gesetzten `admin_code` (oder weiterhin Code). Der Drucker-Tab (`/admin/?tab=printer`) zeigt Spooler/CP1500-Erkennung, bietet `CP1500 koppeln` per WLAN-IP und setzt bei Erfolg den Druckernamen automatisch. Job-Retry setzt Druckjobs wieder konsistent auf `queued` statt Legacy-`pending`.
 - 2026-03-04 – Bestell-Flow ohne mbstring gehärtet: `shared/utils.php` nutzt mit `textSubstr()` jetzt einen Fallback auf `iconv_substr`/`substr`, und `web/mobile/order.php` verwendet diesen Helper für E-Mail/Adressfelder. Damit führt fehlendes `mbstring` nicht mehr zu `500` in `order.php` beim POST.
 - 2026-03-04 – Supervisor-Worker-Kopplung verschärft: Bei PHP-Webserver-Absturz stoppt `start.ps1` den Watcher sofort und startet ihn erst nach erfolgreichem PHP-Restart wieder, damit ohne laufende Webapp keine Import-/Worker-Aktivität weiterläuft.
@@ -192,4 +193,5 @@ php import/print_worker.php run
 - 2026-02-27 – MVP implementiert: Import, Thumb-Generierung, SQLite-Index, mobile Galerie mit Zeitfenster/Alle-Fotos, Session-Bestellungen, Druckqueue-API, Druckworker, Cleanup.
 - 2026-02-27 – Hardware-Setup und optionale Future-Themen (i2i/Anime nur Placeholder) dokumentiert.
 - 2026-02-27 – Security/Privacy Betriebsregeln für den MVP ergänzt.
+
 

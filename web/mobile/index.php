@@ -9,6 +9,7 @@ noCacheHeaders();
 noIndexHeaders();
 
 initMobileSession();
+$csrfToken = getCsrfToken();
 
 $pdo = pdo();
 $cfg = config();
@@ -55,11 +56,26 @@ if ($view === 'recent') {
     }
 }
 
+$printableFavCount = 0;
+if ($view === 'favs' && $photos !== []) {
+    foreach ($photos as $photo) {
+        if (is_photo_printable($photo)) {
+            $printableFavCount++;
+        }
+    }
+}
+
 ob_start();
 if ($view === 'favs') {
     echo '<div class="panel actions">';
     if ($photos !== []) {
         echo '<a class="button" href="/mobile/download_zip.php">Alle als ZIP</a>';
+    }
+    if ($printableFavCount >= 2) {
+        echo '<form method="post" action="/mobile/api_print_favs.php" data-print-favs-form style="margin:0;">';
+        echo '<input type="hidden" name="csrf_token" value="' . mobileEsc($csrfToken) . '">';
+        echo '<button type="submit">2 Gemerkte drucken</button>';
+        echo '</form>';
     }
     echo '<a class="button button-muted" href="/mobile/order.php">Bestellung</a>';
     echo '</div>';

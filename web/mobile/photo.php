@@ -56,7 +56,7 @@ if ($photo === null) {
     } else {
         $cfg = config();
     $printable = is_photo_printable($photo);
-    $printConfigured = isPrintConfigured($cfg);
+    $printConfigured = isPrintConfigured($cfg) || getConfiguredPrinterName($pdo) !== '';
     $isFav = isset($_SESSION['favs'][(string) $photo['id']]);
     $printTicket = createPrintTicket((string) $photo['id']);
     ?>
@@ -85,3 +85,4 @@ mobileRenderLayout([
     'active_view' => 'recent',
     'content_html' => $content,
 ]);
+
