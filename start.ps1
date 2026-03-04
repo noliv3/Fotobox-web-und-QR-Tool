@@ -16,6 +16,41 @@ $watcherErrorMarker = Join-Path $config.logs_path 'watcher_error_unix.txt'
 
 Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message 'Start von start.ps1 initiiert.'
 
+function Ensure-FirewallPort5513 {
+    param([Parameter(Mandatory = $true)][string]$SupervisorLog)
+
+    $ruleName = 'Photobooth digiCamControl Webserver 5513'
+    $exists = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+    if ($null -ne $exists) {
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message "Firewall-Regel bereits vorhanden: $ruleName"
+        return
+    }
+
+    if (-not (Test-PhotoboxAdmin)) {
+        $msg = 'Firewall-Regel für digiCamControl (TCP 5513) konnte ohne Admin-Rechte nicht erstellt werden.'
+        Write-PhotoboxLog -Path $SupervisorLog -Level 'ERROR' -Message $msg
+        throw $msg
+    }
+
+    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5513 | Out-Null
+    Write-PhotoboxLog -Path $SupervisorLog -Level 'INFO' -Message "Firewall-Regel erstellt: $ruleName"
+}
+
+function Get-DigiCamControlExecutablePath {
+    $paths = @(
+        'C:\Program Files\digiCamControl\digiCamControl.exe',
+        'C:\Program Files (x86)\digiCamControl\digiCamControl.exe'
+    )
+
+    foreach ($path in $paths) {
+        if (Test-Path -LiteralPath $path) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
 $state = @{
     supervisor_pid = $PID
     php_pid = 0
@@ -28,6 +63,104 @@ $state = @{
     php_backoff_seconds = 0
 }
 Save-PhotoboxState -Config $config -State $state
+
+$dccInstallerScript = Join-Path $repoRoot 'ops/install_digicamcontrol.ps1'
+$installArgs = @(
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    $dccInstallerScript,
+    '-SupervisorLog',
+    $supervisorLog
+)
+$installProc = Start-Process -FilePath 'powershell.exe' -ArgumentList $installArgs -Wait -PassThru -WindowStyle Hidden
+if ($installProc.ExitCode -ne 0) {
+    $state.status = 'ERROR'
+    $state.last_heartbeat = (Get-Date).ToString('s')
+    Save-PhotoboxState -Config $config -State $state
+
+    $msg = 'digiCamControl fehlt oder Installation fehlgeschlagen. Start abgebrochen, kein Restart-Loop.'
+    Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
+    Write-Error $msg
+    exit 1
+}
+
+try {
+    Ensure-FirewallPort5513 -SupervisorLog $supervisorLog
+} catch {
+    $state.status = 'ERROR'
+    $state.last_heartbeat = (Get-Date).ToString('s')
+    Save-PhotoboxState -Config $config -State $state
+    throw
+}
+
+$dccProcess = Get-Process -Name 'digiCamControl' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $dccProcess) {
+    $dccExe = Get-DigiCamControlExecutablePath
+    if ([string]::IsNullOrWhiteSpace($dccExe)) {
+        $state.status = 'ERROR'
+        $state.last_heartbeat = (Get-Date).ToString('s')
+        Save-PhotoboxState -Config $config -State $state
+
+        $msg = 'digiCamControl.exe nicht gefunden. Start abgebrochen.'
+        Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
+        Write-Error $msg
+        exit 1
+    }
+
+    $dccProcess = Start-Process -FilePath $dccExe -WindowStyle Minimized -PassThru
+    Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "digiCamControl gestartet (PID $($dccProcess.Id))."
+} else {
+    Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "digiCamControl läuft bereits (PID $($dccProcess.Id))."
+}
+
+$dccReady = $false
+for ($i = 0; $i -lt 10; $i++) {
+    try {
+        $sessionResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:5513/session.json' -UseBasicParsing -TimeoutSec 2
+        if ($sessionResponse.StatusCode -eq 200) {
+            $dccReady = $true
+            break
+        }
+    } catch {
+    }
+    Start-Sleep -Seconds 1
+}
+
+if (-not $dccReady) {
+    $state.status = 'ERROR'
+    $state.last_heartbeat = (Get-Date).ToString('s')
+    Save-PhotoboxState -Config $config -State $state
+
+    $msg = 'digiCamControl Webserver nicht aktiv (Settings -> Webserver -> Use web server, danach Neustart). Start abgebrochen.'
+    Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
+    Write-Error $msg
+    exit 1
+}
+
+$sessionFolder = 'E:\photobooth\data\watch'
+$setFolderUrl = 'http://127.0.0.1:5513/?slc=set&param1=session.folder&param2=' + [uri]::EscapeDataString($sessionFolder)
+
+try {
+    $setFolderResponse = Invoke-WebRequest -Uri $setFolderUrl -UseBasicParsing -TimeoutSec 5
+    $isOk = ($setFolderResponse.StatusCode -eq 200) -or ([string]$setFolderResponse.Content -match 'OK')
+    if (-not $isOk) {
+        throw 'invalid_response'
+    }
+} catch {
+    $state.status = 'ERROR'
+    $state.last_heartbeat = (Get-Date).ToString('s')
+    Save-PhotoboxState -Config $config -State $state
+
+    $msg = 'digiCamControl session.folder konnte nicht gesetzt werden.'
+    Write-PhotoboxLog -Path $supervisorLog -Level 'ERROR' -Message $msg
+    Write-Error $msg
+    exit 1
+}
+
+Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "digiCamControl session.folder gesetzt: $sessionFolder"
 
 $phpExe = Get-PhpExecutable -RepoRoot $repoRoot -SupervisorLog $supervisorLog
 Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "PHP: $phpExe"

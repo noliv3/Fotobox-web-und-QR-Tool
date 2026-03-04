@@ -54,6 +54,7 @@
 - start: `./start.ps1` (Windows Supervisor-Start, startet PHP `-t web` auf konfiguriertem Port)
 - stop: `./stop.ps1` (beendet Supervisor/PHP best-effort)
 - status: `./status.ps1` (zeigt Supervisor/PHP/Port/Watcher + Log-Tail)
+- digiCamControl install: `powershell -ExecutionPolicy Bypass -File ops/install_digicamcontrol.ps1 -SupervisorLog <pfad-zu-supervisor.log>` (installiert digiCamControl silent bei Bedarf, fail-fast bei Download/Install-Fehlern)
 - manueller Start (Default-Port 8080): `php -S 0.0.0.0:8080 -t web`
 - historisch (nicht Default): `php -S 0.0.0.0:8000 -t web`
 - test: _derzeit nicht definiert (MVP ohne Testsuite)_
@@ -243,6 +244,8 @@
 - 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
 
 ## Changelog
+
+- 2026-03-04 – digiCamControl Dependency/Fail-Fast: Neues Script `ops/install_digicamcontrol.ps1` erkennt digiCamControl über bekannte Binary-Pfade oder Registry-Uninstall-Keys und installiert bei Bedarf `digiCamControlsetup_2.1.7.0.exe` silent aus SourceForge. `start.ps1` ruft die Installation vor dem Dienststart auf (ExitCode!=0 => sofortiger Abbruch ohne Restart-Loop), erzwingt Firewall-Regel `Photobooth digiCamControl Webserver 5513`, startet digiCamControl bei Bedarf minimiert, prüft `http://127.0.0.1:5513/session.json` für maximal 10 Sekunden und bricht mit klarer Meldung ab, wenn der Webserver nicht aktiv ist. Danach setzt `start.ps1` `session.folder` via SLC auf `E:\photobooth\data\watch` und bricht ebenfalls fail-fast bei Fehler ab.
 
 - 2026-03-03 – Mobile/Bestellung/Caching-Update: 24h-Bestelllimit aus `web/mobile/order.php` entfernt (Bestellung nicht mehr vom Bildalter abhängig) und Hinweistext entsprechend korrigiert. Mobile-Listen laden Thumbnails jetzt mit `loading="lazy"`, `decoding="async"`, `fetchpriority="low"` plus quadratischer Kachelgeometrie. Listenlogik wurde auf `created_at` vereinheitlicht (`Alle`: nur `deleted=0`, Sortierung `created_at DESC`; `Neu`: Zeitfenster über `gallery_window_minutes`, ohne Druckstatus-Filter). Bildendpunkte (`web/mobile/image.php`, `web/mobile/download.php`) unterstützen stabile `id`-Links (Token nur Legacy-Alias), liefern aggressive Bild-Caches (`Cache-Control: public, max-age=31536000, immutable`) inkl. `ETag`/`Last-Modified` und 304-Handling via neuem Helper `sendFileCached()`. Detailansicht zeigt bei fehlender Originaldatei eine klare „Datei fehlt“-Hinweisseite statt still zu brechen.
 
