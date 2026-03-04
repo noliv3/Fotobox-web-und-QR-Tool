@@ -53,6 +53,18 @@ Wichtige Schlüssel:
 ## Betrieb
 
 ### 2026-02-27 – Windows Ops (PowerShell 5.1)
+### 2026-03-04 – digiCamControl Auto-Install + Fail-Fast
+- `start.ps1` führt vor dem Start der Photobox-Dienste `ops/install_digicamcontrol.ps1` aus. Wenn digiCamControl fehlt, wird der Installer (`digiCamControlsetup_2.1.7.0.exe`) automatisch geladen und mit `/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART` silent installiert.
+- Bei Download-/Installationsfehlern wird sofort mit Fehler abgebrochen (`kein Restart-Loop`).
+- `start.ps1` erzwingt die Firewall-Regel `Photobooth digiCamControl Webserver 5513` (TCP Inbound) und bricht ohne Admin-Rechte/Firewall-Fehler fail-fast ab, damit LiveView/Capture zuverlässig erreichbar ist.
+- Wenn `digiCamControl.exe` nicht läuft, wird der Prozess minimiert gestartet und anschließend maximal 10 Sekunden `http://127.0.0.1:5513/session.json` geprüft. Ohne HTTP 200 bricht der Start mit Hinweis auf `Use web server` in den digiCamControl-Settings ab.
+- Nach erfolgreichem Healthcheck setzt `start.ps1` `session.folder` per SLC auf `E:\photobooth\data\watch`; bei Fehler wird der Start ebenfalls abgebrochen.
+
+#### digiCamControl Webserver-Endpunkte (lokal)
+- LiveView starten: `http://127.0.0.1:5513/?CMD=LiveViewWnd_Show`
+- Live Frame: `http://127.0.0.1:5513/liveview.jpg`
+- Capture: `http://127.0.0.1:5513/?CMD=Capture`
+
 - Start erfolgt über `./start.ps1` (Supervisor + Watcher + PHP-Webserver unter `web` mit Pfaden `/mobile` und `/gallery`).
 - Stop erfolgt über `./stop.ps1` (beendet Supervisor/PHP best-effort über State-Datei).
 - Status erfolgt über `./status.ps1` (zeigt Prozessstatus, Port-Check, Watcher-Status und Log-Tails).
@@ -138,6 +150,8 @@ php import/print_worker.php run
 - Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
 
 ## Changelog
+
+- 2026-03-04 – Ops digiCamControl-Integration: Neues `ops/install_digicamcontrol.ps1` ergänzt automatische Silent-Installation (SourceForge-Installer) mit klaren Phase-Logs (`installed`, `download_failed`, `install_failed`). `start.ps1` wurde um fail-fast Integration erweitert: Install-Preflight vor PHP-Start, verpflichtende Firewall-Regel für TCP/5513, digiCamControl-Prozessstart, Webserver-Healthcheck (`/session.json`) und SLC-Set für `session.folder` auf `E:\photobooth\data\watch`. Bei jedem Fehlschritt erfolgt sofortiger Abbruch ohne Restart-Loop.
 - 2026-03-03 – Korrektur Bestelllogik + Mobile-Performance: Die 24h-Altersgrenze für Bestellungen wurde entfernt (Bestellungen sind nicht mehr vom Fotoalter abhängig). Mobile-Grid nutzt Lazy-Loading (`loading="lazy"`, `decoding="async"`, `fetchpriority="low"`) mit stabiler 1:1-Thumbnail-Geometrie. „Alle“ zeigt strikt alle nicht gelöschten Fotos (`deleted=0`, Sortierung nach `created_at DESC`), „Neu“ filtert nur nach Zeitfenster und nicht nach Druckstatus. Bildendpunkte liefern jetzt aggressive Byte-Caches (`public, max-age=31536000, immutable`) mit `ETag`/`Last-Modified`/`304`, während HTML weiterhin `no-store` bleibt. Foto-Detail und Download unterstützen stabile `id`-Links (Token nur noch kompatibler Alias).
 
 - 2026-03-03 – Bestellwesen Final: `web/mobile/order.php` validiert jetzt Name+E-Mail (und bei Versand vollstaendige Adresse), erzwingt die 24h-Regel auf Basis der Foto-Zeitstempel, speichert Bestellungen mit `order_token`/`price_cents`/`paypal_url` und erzeugt pro Bestellung ein Admin-ZIP unter `data/orders/<order_id>/order_<order_id>.zip` (wenn `ZipArchive` verfuegbar). `web/mobile/order_done.php` nutzt Token-Lookup und zeigt PayPal-Abschnitt inkl. QR-Bild (`/mobile/qr.php`) + Offline-Hinweis. Admin-Bereich zeigt ZIP-Link (`/admin/download_order_zip.php`) nur intern; Legacy-APIs (`api_order_name.php`, `api_unmark.php`) wurden auf Session+CSRF+Rate-Limit gehaertet.
