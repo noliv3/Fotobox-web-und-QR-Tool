@@ -1,124 +1,98 @@
 # Hochzeits-Fotobox
 
-Die **Hochzeits-Fotobox** ist ein offline-first MVP in PHP 8.x ohne Frameworks und ohne externe Abhängigkeiten. Bilder werden lokal importiert, indexiert, in einer mobilen Galerie angezeigt, optional innerhalb eines Zeitfensters gedruckt und nach Retention automatisch gelöscht.
+Offline-first Fotobox-Stack (PHP 8, SQLite, PowerShell-Ops) für Event-LAN ohne Cloud-Zwang.
 
-## MVP-Umfang
-### 2026-02-27 – MVP-Spezifikation + Hardware-Setup
-- HDMI Live-View wird separat am Monitor betrieben.
-- USB/Canon Tool dient ausschließlich der Bildübernahme in `watch_path`.
-- Gäste sehen standardmäßig nur die letzten 15 Minuten und können dort drucken.
-- Die komplette Galerie ist separat verfügbar, aber ohne Druckfunktion.
-- Markieren/Bestellen funktioniert ohne Login per Name + Session-Cookie.
+## 2026-03-05 – Vollständige Prozessübersicht (Ist-Stand)
 
-### 2026-02-27 – Future/Optional
-- i2i/Anime bleibt ein optionaler Queue-Worker als Platzhalter in der Planung.
-- i2i/Anime ist im MVP **nicht** implementiert.
+### 1) Bildentstehung & Ingest
+1. Kamera liefert JPGs in den überwachten Eingang (`watch_path`) oder auf SD-Karte (`sd_card_path`, rekursiv).
+2. Watcher/Supervisor triggert `import/import_service.php ingest-file <path>`.
+3. Import übernimmt Bild nach `data/originals`, erzeugt Thumbnail in `data/thumbs`, schreibt Datensatz in `photos`.
 
-## Architektur (MVP)
-- `import/import_service.php`: CLI für DB-Setup, Ingest und Cleanup.
-- `import/print_worker.php`: CLI für serielle Druckjobs über System-Spooler.
-- `web/mobile/*`: Gästeansichten + API-Endpunkte.
-- `web/gallery/index.php`: öffentlicher Galerie-/Monitor-Status (read-only).
-- `web/gallery/admin.php`: optionaler Admin-Login, standardmäßig deaktiviert.
-- `shared/bootstrap.php`: Konfiguration, DB-Autoinit, Header- und Order-Helfer.
-- `shared/utils.php`: Zeit-, Validierungs-, Session- und Rate-Limit-Utilities.
+### 2) Index & Medienzugriff
+1. SQLite (`data/queue/photobox.sqlite`) ist zentrale Quelle (`photos`, `print_jobs`, `orders`, `order_items`, `kv`).
+2. Mobile-Endpunkte lösen Bilder über Token/ID auf, niemals über freie Dateipfade.
+3. Medienausgabe läuft über `image.php`/`download.php` mit Header-Härtung und Cache-Strategie.
 
-## Offline-Setup (LAN ohne Internet)
-### 2026-02-27 – Offline-first Betrieb
-- Router SSID: `FOTOBOX_SSID_PLACEHOLDER`
-- Router Passwort: `FOTOBOX_PASSWORT_PLACEHOLDER`
-- Lokale QR-Ziel-URL: `http://photobox:8080/` oder alternativ `http://192.168.8.2:8080/`
-- HTTP-Port: `8080` (konfigurierbar über `port` in `shared/config.php`).
-- Keine externen Ressourcen verwenden (keine CDN-Assets, keine externen APIs, keine Analytics).
-- Systemzeit des Mini-PC lokal korrekt halten; der Code nutzt keine Online-Zeitquelle.
+### 3) Mobile Gäste-Flow
+1. Gast öffnet `/mobile/` und sieht standardmäßig neue Fotos im Zeitfenster (`gallery_window_minutes`).
+2. Gast kann Fotos merken (Session-basiert), einzeln ansehen und herunterladen.
+3. Gast kann 1 Druckjob pro Foto oder 2 Druckjobs aus Favoriten anstoßen (CSRF + Ticket + Rate-Limit).
+4. Gast kann Bestellung aus Merkliste abschließen (`order.php`) inkl. Name, E-Mail und optional Versandadresse.
+5. Abschlussseite (`order_done.php`) zeigt Betrag, PayPal-Link und QR.
 
-## Konfiguration
-Datei: `shared/config.php` (lokal erstellen, `shared/config.example.php` als Vorlage nutzen).
+### 4) Druckpipeline
+1. API schreibt Job in `print_jobs` und rendert Druckdatei nach `data/printfiles`.
+2. Worker (`import/print_worker.php`) verarbeitet seriell, pollt Spoolerstatus und mapped Fehler robust.
+3. Statusmodell: `queued`, `sending`, `spooled`, `needs_attention`, `paused`, `done`, `canceled`, `failed_hard`.
+
+### 5) Admin-/Monitoring-Flow
+1. `/gallery/` ist öffentliche Read-only Statusansicht.
+2. `/admin/` (und Gallery-Admin) ist session-geschützt, sofern `admin_code` oder `admin_password_hash` gesetzt ist.
+3. Admin kann Jobs überwachen, retryn/canceln/löschen und Bestell-ZIPs abrufen.
+
+### 6) Betrieb, Stabilität & Cleanup
+1. `start.ps1` übernimmt Preflight (PHP/SQLite/ZipArchive), Supervisor, Watcher, Webserver und dcc-Integration.
+2. Logging nach `data/logs` mit robustem Sync/Backoff.
+3. Cleanup entfernt abgelaufene Daten physisch + markiert DB (`photos.deleted=1`).
+
+## Funktionsstatus – Wie nah an „Fotobox mit allen Funktionen“?
+
+### Bereits stark umgesetzt (Produktionsnah im Event-LAN)
+- End-to-End Kern: Import → Galerie → Favoriten → Bestellung → Druckqueue → Worker.
+- Offline-first Betrieb ohne Cloud-Abhängigkeit.
+- Security-MVP: CSRF, Session-Bindung, Token-Zugriff, Rate-Limit, keine offenen Dateipfade.
+- Ops-Härtung auf Windows: Supervisor, Backoff, Fail-Fast, klare Fehlercodes.
+
+### Teilweise umgesetzt / abhängig von Umgebung
+- Kamera-Autofluss hängt von digiCamControl/Webserver-Konfiguration auf Host ab.
+- Druckqualität und Stabilität hängen von Windows-Spooler + konkretem Druckermodell ab.
+- Admin-Authentifizierung ist bewusst pragmatisch (LAN-Event-Modell), nicht Enterprise-Hardening.
+
+### Noch offen bis „vollständig“ im Sinne einer kommerziellen Komplett-Fotobox
+- Kein integrierter Kamera-Remote-Workflow in Web-UI (nur Ops-/DCC-getrieben).
+- Kein dediziertes Rollen-/Rechtemodell mit mehreren Admin-Rollen.
+- Keine automatisierte Test-/Lint-Pipeline im Repo hinterlegt.
+- Kein integriertes Zahlungs-Webhook-Matching (PayPal-Link/QR ist vorhanden, Payment-Confirm manuell).
+
+**Kurzbewertung (2026-03-05):**
+- Für ein offline Event-Setup ist der Stand **fortgeschritten (ca. 80–85%)**.
+- Für „alle Funktionen“ einer voll kommerziellen Fotobox-Plattform fehlen vor allem Automatisierungstiefe, Rollenmodell und formale QA-Pipeline.
+
+## Projektstruktur
+- `web/index.php` – Root-Redirect auf `/mobile/`
+- `web/mobile` – Gäste-UI + APIs
+- `web/gallery` – öffentlicher Monitor + optionaler Gallery-Admin
+- `web/admin` – Admin-Panel (Jobs/Bestellungen/Bilder/Drucker)
+- `import` – Ingest/Cleanup/Print-Worker CLI
+- `ops` – PowerShell Ops- und Druckerhilfen
+- `shared` – Bootstrap, Utilities, Konfiguration
+- `runtime` – Laufzeit-/Diagnoseartefakte
+- `data` – Eventdaten (nicht committen)
+
+## Betriebs-Kommandos
+- Start: `./start.ps1`
+- Stop: `./stop.ps1`
+- Status: `./status.ps1`
+- Manueller Webstart: `php -S 0.0.0.0:8080 -t web`
+- DB init: `php import/import_service.php init-db`
+- Ingest: `php import/import_service.php ingest`
+- Ingest-file: `php import/import_service.php ingest-file <path>`
+- Cleanup: `php import/import_service.php cleanup`
+- Print Worker einmalig: `php import/print_worker.php run`
+- Print Worker Loop: `php import/print_worker.php run-loop [sleep_seconds]`
+
+## Konfigurationshinweise
+Nutze `shared/config.example.php` als Vorlage für `shared/config.php`.
 
 Wichtige Schlüssel:
-- `base_url`, `base_url_mobile`
-- `watch_path`, `data_path`
-- `timezone` (Default: `Europe/Vienna`)
-- `retention_days`
-- `gallery_window_minutes` (Default: `15`)
-- `print_api_key`
-- `admin_password_hash` (`CHANGE_ME` = Admin deaktiviert)
+- `base_url`, `base_url_mobile`, `port`
+- `watch_path`, `data_path`, `import_mode`, `sd_card_path`
+- `gallery_window_minutes`, `retention_days`
+- `print_api_key`, `printer_name` (über Admin/kv)
+- `paypal_me_base_url`, `order_zip_dir`
+- `admin_code`, `admin_password_hash`
 - `rate_limit_max`, `rate_limit_window_seconds`
 
-## Betrieb
-
-### 2026-02-27 – Windows Ops (PowerShell 5.1)
-- Start erfolgt über `./start.ps1` (Supervisor + Watcher + PHP-Webserver unter `web` mit Pfaden `/mobile` und `/gallery`).
-- Stop erfolgt über `./stop.ps1` (beendet Supervisor/PHP best-effort über State-Datei).
-- Status erfolgt über `./status.ps1` (zeigt Prozessstatus, Port-Check, Watcher-Status und Log-Tails).
-- Logs liegen in `data/logs`: `supervisor.log`, `watcher.log`, `php.log`.
-- Start prüft Port, Firewall-Regel, Watch-Ordner, Kamera-/Drucker-Hinweise und protokolliert Failure-Modes ohne interaktive Prompts.
-- Log-Sync von PHP-Process-Redirection ist lock-tolerant: Dateilesen erfolgt mit `FileShare.ReadWrite`, nutzt Retry-Backoff (100/300/800 ms) und schreibt bei weiterhin gelockter Datei nur `WARN`, damit `start.ps1` weiterläuft.
-- `start.ps1` kapselt `Sync-PhpProcessLogs` in Supervisor-Loop und Shutdown-Phase in `try/catch`; Log-Sync-Fehler führen nicht mehr zum Supervisor-Abbruch.
-
-
-### 2026-02-27 – Windows PHP-Diagnose und SQLite-Pflicht
-- `./start.ps1` prüft vor dem Serverstart zwingend `php -v`, `php --ini` und `php -m`.
-- Bei Parse-/INI-Fehlern (z. B. `Parse error`, `Command line code`) startet der PHP-Server **nicht**; Supervisor setzt Fehlerstatus statt Endlos-Restart.
-- Leere Zeilen in der PHP-Diagnoseausgabe werden beim Logging übersprungen, damit `Write-PhotoboxLog` keine leeren `Message`-Werte erhält und `start.ps1` nicht mit ParameterBinding-Fehler abbricht.
-- SQLite ist Pflicht für den MVP: `pdo_sqlite` muss in `php -m` vorhanden sein (`sqlite3` allein reicht nicht, da die App PDO nutzt).
-- Logs enthalten bei Fehlern immer die vollständige Diagnoseausgabe von `php --ini` und `php -m` in `data/logs/php.log`.
-- `./status.ps1` erzeugt fehlende `data/logs` automatisch und liefert dadurch auch ohne vorherigen `./start.ps1` robust OK/FAIL-Diagnosen.
-
-#### Konkreter Fix für php.ini (Windows)
-1. In der aktiven `php.ini` (siehe `php --ini`) aktivieren:
-   - `extension=pdo_sqlite`
-   - `extension=sqlite3`
-2. Zusätzliche INI-Dateien auf Syntaxfehler prüfen (insbesondere bei Meldungen mit `Command line code`/`Parse error`).
-3. Falls die INI-Landschaft beschädigt ist: portable, saubere PHP-Version unter `runtime/php/` verwenden oder bestehende INI-Dateien reparieren.
-
-
-### 2026-02-27 – Galerie Auth-Modell
-- `/gallery/` ist öffentlich und zeigt read-only Status, letzte Fotos und letzte Jobs ohne Login.
-- `/gallery/admin.php` ist optional geschützt (Session-Cookie `pb_admin`).
-- Admin ist nur aktiv, wenn `admin_password_hash` in `shared/config.php` gesetzt ist und nicht `CHANGE_ME` ist.
-- Ist Admin nicht aktiv, liefert `/gallery/admin.php` einen klaren `403`-Hinweis zur Aktivierung.
-- Passwort-Hash erzeugen: `php -r "echo password_hash('DEINPASS', PASSWORD_DEFAULT), PHP_EOL;"`
-
-### Initialisieren
-```bash
-php import/import_service.php init-db
-```
-
-### Neue Bilder importieren
-```bash
-php import/import_service.php ingest
-```
-
-### Alte Daten bereinigen
-```bash
-php import/import_service.php cleanup
-```
-
-### Druckjobs verarbeiten
-```bash
-php import/print_worker.php run
-```
-
-## Datenfluss
-`watch_path` -> Import (`/data/originals`) -> Thumbnail (`/data/thumbs`) -> SQLite-Index (`/data/queue/photobox.sqlite`) -> Web-Ausgabe (Token-URLs) -> optional Druckqueue -> Cleanup nach Retention.
-
-## Sicherheit & Datenschutz (MVP)
-- Keine direkten Dateipfade nach außen; nur tokenbasierte URLs (`t=...`).
-- Druck nur im Zeitfenster (`gallery_window_minutes`) erlaubt.
-- `api_print.php` verlangt API-Key und hat IP-Ratenlimit über SQLite-`kv`.
-- Eingaben validiert: Token-Format, Uhrzeit (`HH:MM`), Namenslänge/Zeichensatz.
-- `all.php`: `noindex` + `no-store` Header.
-- Cleanup löscht physische Dateien und markiert DB-Einträge `deleted=1`.
-
 ## Changelog
-- 2026-02-27 – Windows Ops Loghandling gehärtet: `Sync-PhpProcessLogs` liest Redirect-Logs lock-tolerant (`FileShare.ReadWrite`) mit Retry/Backoff (100/300/800 ms), schreibt bei persistierendem Lock `WARN` und läuft weiter; `start.ps1` behandelt Log-Sync-Fehler defensiv ohne Crash.
-- 2026-02-27 – Start-Fix: Leere Zeilen aus `php -v/--ini/-m`-Diagnose werden beim Schreiben in `php.log` ignoriert, damit `Write-PhotoboxLog` nicht mit leerer `Message` fehlschlägt.
-- 2026-02-27 – Galerie-Auth umgestellt: `/gallery/` öffentlich/read-only, optionales `/gallery/admin.php` mit `pb_admin`-Session, Default `admin_password_hash=CHANGE_ME` (Admin deaktiviert); Ops-Fixes: SQLite-Preflight verlangt `pdo_sqlite`, `status.ps1` funktioniert ohne vorherigen Start durch `data/logs`-Autocreate.
-- 2026-02-27 – Windows Run stabilisiert: PHP-Konfigurationsdiagnose (`php -v/--ini/-m`), SQLite-Pflichtprüfung, Crash-Backoff (5/10/20/40/60s), HALT nach 5 Crashes, Root-Redirect `web/index.php` ergänzt.
-- 2026-02-27 – Windows Ops ergänzt: `start.ps1` Supervisor/Watcher, `stop.ps1`, `status.ps1`, Firewall- und Gerätechecks, LAN-Offline-Betrieb.
-- 2026-02-27 – Web-Ebene implementiert: Mobile Galerie, Alle-Fotos-Ansicht, Bestellung, Print-Job-API, Admin-Statusseite.
-- 2026-02-27 – Offline-first Setup ergänzt: Router-/QR-URL-Hinweise, keine externen Assets/Requests.
-- 2026-02-27 – MVP implementiert: Import, Thumb-Generierung, SQLite-Index, mobile Galerie mit Zeitfenster/Alle-Fotos, Session-Bestellungen, Druckqueue-API, Druckworker, Cleanup.
-- 2026-02-27 – Hardware-Setup und optionale Future-Themen (i2i/Anime nur Placeholder) dokumentiert.
-- 2026-02-27 – Security/Privacy Betriebsregeln für den MVP ergänzt.
+- 2026-03-05 – README konsolidiert: vollständige Prozessübersicht ergänzt, doppelte/überlange Historienblöcke entfernt, Reifegradbewertung „Wie nah an kompletter Fotobox“ ergänzt.

@@ -91,9 +91,31 @@ function Get-PhotoboxConfig {
     if (-not $cfg.ContainsKey('port')) { $cfg['port'] = 8080 }
     if (-not $cfg.ContainsKey('printer_name')) { $cfg['printer_name'] = '' }
     if (-not $cfg.ContainsKey('camera_idle_minutes')) { $cfg['camera_idle_minutes'] = 30 }
+    if (-not $cfg.ContainsKey('import_mode')) { $cfg['import_mode'] = 'watch_folder' }
+    if (-not $cfg.ContainsKey('sd_card_path')) { $cfg['sd_card_path'] = '' }
 
     $cfg['data_path'] = Resolve-PhotoboxPath -BasePath $RepoRoot -Value ([string]$cfg['data_path'])
     $cfg['watch_path'] = Resolve-PhotoboxPath -BasePath $RepoRoot -Value ([string]$cfg['watch_path'])
+    if (-not [string]::IsNullOrWhiteSpace([string]$cfg['sd_card_path'])) {
+        $cfg['sd_card_path'] = Resolve-PhotoboxPath -BasePath $RepoRoot -Value ([string]$cfg['sd_card_path'])
+    }
+
+    $importMode = ([string]$cfg['import_mode']).ToLowerInvariant()
+    if ($importMode -notin @('watch_folder', 'sd_card')) {
+        $importMode = 'watch_folder'
+    }
+    $cfg['import_mode'] = $importMode
+
+    if ($cfg['import_mode'] -eq 'sd_card') {
+        if ([string]::IsNullOrWhiteSpace([string]$cfg['sd_card_path'])) {
+            $cfg['import_source_path'] = $cfg['watch_path']
+        } else {
+            $cfg['import_source_path'] = [string]$cfg['sd_card_path']
+        }
+    } else {
+        $cfg['import_source_path'] = [string]$cfg['watch_path']
+    }
+
     $cfg['db_path'] = Join-Path $cfg['data_path'] 'queue/photobox.sqlite'
     $cfg['logs_path'] = Join-Path $cfg['data_path'] 'logs'
     $cfg['repo_root'] = $RepoRoot

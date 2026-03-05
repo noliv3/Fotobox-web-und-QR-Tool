@@ -15,7 +15,25 @@ function sanitizeGuestName(string $value): string
     }
 
     $value = preg_replace('/[^\p{L}\p{N}\s\-_.]/u', '', $value) ?? '';
-    return mb_substr(trim($value), 0, 80);
+    return textSubstr(trim($value), 0, 80);
+}
+
+function textSubstr(string $value, int $start, ?int $length = null): string
+{
+    if (function_exists('mb_substr')) {
+        return $length === null
+            ? (string) mb_substr($value, $start, null, 'UTF-8')
+            : (string) mb_substr($value, $start, $length, 'UTF-8');
+    }
+
+    if (function_exists('iconv_substr')) {
+        $result = $length === null
+            ? iconv_substr($value, $start, iconv_strlen($value, 'UTF-8'), 'UTF-8')
+            : iconv_substr($value, $start, $length, 'UTF-8');
+        return $result === false ? '' : (string) $result;
+    }
+
+    return $length === null ? substr($value, $start) : substr($value, $start, $length);
 }
 
 function validateTimeHHMM(string $value): bool

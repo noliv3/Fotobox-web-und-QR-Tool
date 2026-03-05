@@ -6,43 +6,59 @@ require_once __DIR__ . '/../../shared/bootstrap.php';
 
 noCacheHeaders();
 noIndexHeaders();
-requirePost();
+
+initMobileSession();
 
 $pdo = pdo();
-$token = $_POST['t'] ?? '';
-$guestName = sanitizeGuestName((string) ($_POST['guest_name'] ?? ''));
-
-if (!is_string($token) || !isValidToken($token)) {
-    responseJson(['error' => 'invalid_token'], 400);
+$cfg = config();
+$rateKey = 'rl_mark_' . getClientIp();
+if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['rate_limit_window_seconds'])) {
+    responseJson(['ok' => false, 'error' => 'rate_limited'], 429);
 }
 
-$photo = findPhotoByToken($pdo, $token);
-if ($photo === null) {
-    responseJson(['error' => 'photo_not_found'], 404);
-}
-
-$sessionToken = getOrCreateSessionToken();
-$order = getOpenOrder($pdo, $sessionToken, true);
-if ($order === null) {
-    responseJson(['error' => 'order_create_failed'], 500);
-}
-
-if ($guestName !== '') {
-    $pdo->prepare('UPDATE orders SET guest_name = :guest WHERE id = :id')->execute([
-        ':guest' => $guestName,
-        ':id' => $order['id'],
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && isset($_GET['list'])) {
+    responseJson([
+        'ok' => true,
+        'ids' => array_keys($_SESSION['favs']),
     ]);
 }
 
-$pdo->prepare('INSERT INTO order_items(order_id, photo_id) VALUES(:orderId, :photoId) ON CONFLICT(order_id, photo_id) DO NOTHING')->execute([
-    ':orderId' => $order['id'],
-    ':photoId' => $photo['id'],
-]);
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    responseJson(['ok' => false], 405);
+}
 
-$countStmt = $pdo->prepare('SELECT COUNT(*) FROM order_items WHERE order_id = :orderId');
-$countStmt->execute([':orderId' => $order['id']]);
+$csrfHeader = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+if (!verifyCsrfToken($csrfHeader)) {
+    responseJson(['ok' => false], 403);
+}
 
-responseJson([
-    'orderId' => (int) $order['id'],
-    'itemsCount' => (int) $countStmt->fetchColumn(),
-]);
+$action = (string) ($_POST['action'] ?? '');
+$photoId = trim((string) ($_POST['id'] ?? ''));
+if ($photoId === '') {
+    responseJson(['ok' => false], 400);
+}
+
+$stmt = $pdo->prepare('SELECT id FROM photos WHERE id = :id AND deleted = 0 LIMIT 1');
+$stmt->execute([':id' => $photoId]);
+if (!$stmt->fetchColumn()) {
+    responseJson(['ok' => false], 404);
+}
+
+switch ($action) {
+    case 'add':
+        $_SESSION['favs'][$photoId] = true;
+        responseJson(['ok' => true, 'state' => 'added']);
+    case 'remove':
+        unset($_SESSION['favs'][$photoId]);
+        responseJson(['ok' => true, 'state' => 'removed']);
+    case 'toggle':
+        $exists = isset($_SESSION['favs'][$photoId]);
+        if ($exists) {
+            unset($_SESSION['favs'][$photoId]);
+            responseJson(['ok' => true, 'state' => 'removed']);
+        }
+        $_SESSION['favs'][$photoId] = true;
+        responseJson(['ok' => true, 'state' => 'added']);
+    default:
+        responseJson(['ok' => false], 400);
+}

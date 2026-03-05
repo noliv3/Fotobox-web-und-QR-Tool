@@ -59,6 +59,21 @@ function pathLogs(): string
     return pathData() . '/logs';
 }
 
+function pathPrintfiles(): string
+{
+    return pathData() . '/printfiles';
+}
+
+function pathOrders(): string
+{
+    $configured = trim((string) (config()['order_zip_dir'] ?? ''));
+    if ($configured !== '') {
+        return $configured;
+    }
+
+    return pathData() . '/orders';
+}
+
 function dbPath(): string
 {
     return pathQueue() . '/photobox.sqlite';
@@ -72,6 +87,8 @@ function ensureAppDirs(): void
     ensureDir(pathThumbs());
     ensureDir(pathQueue());
     ensureDir(pathLogs());
+    ensureDir(pathPrintfiles());
+    ensureDir(pathOrders());
 }
 
 function pdo(): PDO
@@ -92,20 +109,49 @@ function pdo(): PDO
     $pdo = new PDO('sqlite:' . dbPath());
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    $pdo->exec('PRAGMA journal_mode = WAL');
+    $pdo->exec('PRAGMA busy_timeout = 5000');
 
     initDb($pdo);
 
     return $pdo;
 }
 
+function resolvePathInDirectory(string $baseDir, string $filename): ?string
+{
+    $baseReal = realpath($baseDir);
+    if ($baseReal === false) {
+        return null;
+    }
+
+    $safeName = basename(trim($filename));
+    if ($safeName === '' || $safeName === '.' || $safeName === '..') {
+        return null;
+    }
+
+    $fullPath = $baseReal . DIRECTORY_SEPARATOR . $safeName;
+    $realPath = realpath($fullPath);
+    if ($realPath === false || !is_file($realPath)) {
+        return null;
+    }
+
+    $prefix = rtrim($baseReal, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    if (strpos($realPath, $prefix) !== 0) {
+        return null;
+    }
+
+    return $realPath;
+}
+
 function initDb(PDO $pdo): void
 {
     $schema = [
         'CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, ts INTEGER, filename TEXT, token TEXT UNIQUE, thumb_filename TEXT, deleted INTEGER DEFAULT 0)',
-        'CREATE TABLE IF NOT EXISTS print_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, photo_id TEXT, created_ts INTEGER, status TEXT, error TEXT NULL)',
+        'CREATE TABLE IF NOT EXISTS print_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, photo_id TEXT, created_ts INTEGER, status TEXT NOT NULL DEFAULT "queued", error TEXT NULL)',
         'CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)',
         'CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, created_ts INTEGER, guest_name TEXT, session_token TEXT, status TEXT, note TEXT)',
         'CREATE TABLE IF NOT EXISTS order_items (order_id INTEGER, photo_id TEXT, PRIMARY KEY(order_id, photo_id))',
+        'CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)',
         'CREATE INDEX IF NOT EXISTS photos_ts ON photos(ts)',
         'CREATE INDEX IF NOT EXISTS photos_token ON photos(token)',
         'CREATE INDEX IF NOT EXISTS print_jobs_status ON print_jobs(status)',
@@ -114,6 +160,166 @@ function initDb(PDO $pdo): void
 
     foreach ($schema as $sql) {
         $pdo->exec($sql);
+    }
+
+    ensurePrintSchema($pdo);
+    ensureOrderSchema($pdo);
+
+    ensureTableColumns($pdo, 'orders', [
+        'created_at' => 'TEXT',
+        'name' => 'TEXT',
+        'count' => 'INTEGER DEFAULT 0',
+        'shipping_enabled' => 'INTEGER DEFAULT 0',
+        'price_total' => 'REAL DEFAULT 0',
+    ]);
+    ensureTableColumns($pdo, 'photos', [
+        'fingerprint' => 'TEXT',
+        'created_at' => 'INTEGER',
+    ]);
+    $pdo->exec("UPDATE photos SET created_at = COALESCE(created_at, ts, strftime('%s','now')) WHERE created_at IS NULL OR created_at = 0");
+    migratePhotoFilenameFingerprint($pdo);
+}
+
+
+function ensureOrderSchema(PDO $pdo): void
+{
+    ensureTableColumns($pdo, 'orders', [
+        'created_at' => 'INTEGER',
+        'name' => 'TEXT',
+        'email' => "TEXT NOT NULL DEFAULT ''",
+        'shipping_enabled' => 'INTEGER NOT NULL DEFAULT 0',
+        'addr_street' => 'TEXT NULL',
+        'addr_zip' => 'TEXT NULL',
+        'addr_city' => 'TEXT NULL',
+        'addr_country' => 'TEXT NULL',
+        'photo_count' => 'INTEGER NOT NULL DEFAULT 0',
+        'price_cents' => 'INTEGER NOT NULL DEFAULT 0',
+        'paypal_url' => 'TEXT NULL',
+        'pay_status' => "TEXT NOT NULL DEFAULT 'unpaid'",
+        'order_token' => 'TEXT',
+        'zip_path' => 'TEXT NULL',
+    ]);
+
+    $pdo->exec("UPDATE orders SET created_at = COALESCE(created_at, created_ts, strftime('%s','now')) WHERE created_at IS NULL OR created_at = ''");
+    $pdo->exec("UPDATE orders SET photo_count = COALESCE(photo_count, 0) WHERE photo_count IS NULL");
+    $pdo->exec("UPDATE orders SET price_cents = COALESCE(price_cents, 0) WHERE price_cents IS NULL");
+    $pdo->exec("UPDATE orders SET pay_status = 'unpaid' WHERE pay_status IS NULL OR trim(pay_status) = ''");
+    $pdo->exec("UPDATE orders SET order_token = lower(hex(randomblob(16))) WHERE order_token IS NULL OR trim(order_token) = ''");
+
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_order_token ON orders(order_token)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)');
+
+    ensureTableColumns($pdo, 'order_items', [
+        'id' => 'INTEGER',
+        'created_at' => 'INTEGER',
+    ]);
+    $pdo->exec("UPDATE order_items SET created_at = COALESCE(created_at, strftime('%s','now')) WHERE created_at IS NULL OR created_at = 0");
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id)');
+}
+
+function ensurePrintSchema(PDO $pdo): void
+{
+    ensureTableColumns($pdo, 'print_jobs', [
+        'status' => "TEXT NOT NULL DEFAULT 'queued'",
+        'spool_job_id' => 'INTEGER NULL',
+        'document_name' => 'TEXT NULL',
+        'attempts' => 'INTEGER NOT NULL DEFAULT 0',
+        'last_error' => 'TEXT NULL',
+        'last_error_at' => 'INTEGER NULL',
+        'next_retry_at' => 'INTEGER NULL',
+        'printfile_path' => 'TEXT NULL',
+        'updated_at' => 'INTEGER NOT NULL DEFAULT 0',
+    ]);
+
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_print_jobs_status_nextretry ON print_jobs(status, next_retry_at)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_print_jobs_spool ON print_jobs(spool_job_id)');
+
+    $pdo->exec("UPDATE print_jobs SET status = 'queued' WHERE status IS NULL OR status = '' OR status = 'pending'");
+    $pdo->exec("UPDATE print_jobs SET last_error = error WHERE last_error IS NULL AND error IS NOT NULL AND trim(error) != ''");
+    $pdo->exec("UPDATE print_jobs SET attempts = 0 WHERE attempts IS NULL");
+    $pdo->exec("UPDATE print_jobs SET updated_at = COALESCE(updated_at, created_ts, strftime('%s','now')) WHERE updated_at IS NULL OR updated_at = 0");
+}
+
+function printBackoffSeconds(int $attempts): int
+{
+    $step = max(0, min($attempts - 1, 5));
+    return min(300, 10 * (2 ** $step));
+}
+
+function createPrintfileForJob(string $photoId, int $jobId): ?string
+{
+    $source = pathOriginals() . '/' . $photoId . '.jpg';
+    if (!is_file($source)) {
+        return null;
+    }
+
+    ensureDir(pathPrintfiles());
+    $target = pathPrintfiles() . '/' . $jobId . '.jpg';
+    if (!@copy($source, $target)) {
+        return null;
+    }
+
+    return $target;
+}
+
+function ensureTableColumns(PDO $pdo, string $table, array $columns): void
+{
+    $existing = [];
+    $rows = $pdo->query('PRAGMA table_info(' . $table . ')')->fetchAll();
+    foreach ($rows as $row) {
+        $existing[(string) $row['name']] = true;
+    }
+
+    foreach ($columns as $name => $definition) {
+        if (isset($existing[$name])) {
+            continue;
+        }
+        $pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $name . ' ' . $definition);
+    }
+}
+
+function migratePhotoFilenameFingerprint(PDO $pdo): void
+{
+    $rows = $pdo->query('SELECT id, filename, thumb_filename, fingerprint, deleted FROM photos WHERE deleted = 0')->fetchAll();
+    if ($rows === []) {
+        return;
+    }
+
+    $update = $pdo->prepare('UPDATE photos SET filename = :filename, thumb_filename = :thumb_filename, fingerprint = :fingerprint WHERE id = :id');
+    foreach ($rows as $row) {
+        $id = (string) ($row['id'] ?? '');
+        if ($id === '') {
+            continue;
+        }
+
+        $filename = (string) ($row['filename'] ?? '');
+        $thumbFilename = (string) ($row['thumb_filename'] ?? '');
+        $fingerprint = (string) ($row['fingerprint'] ?? '');
+        $changed = false;
+
+        $originalFile = pathOriginals() . '/' . $id . '.jpg';
+        if ($fingerprint === '' && preg_match('/^[a-f0-9]{40}$/', $filename) && is_file($originalFile)) {
+            $fingerprint = $filename;
+            $filename = $id . '.jpg';
+            $changed = true;
+        }
+
+        $thumbFile = pathThumbs() . '/' . $id . '.jpg';
+        if ($thumbFilename === '' && is_file($thumbFile)) {
+            $thumbFilename = $id . '.jpg';
+            $changed = true;
+        }
+
+        if (!$changed) {
+            continue;
+        }
+
+        $update->execute([
+            ':id' => $id,
+            ':filename' => $filename,
+            ':thumb_filename' => $thumbFilename,
+            ':fingerprint' => $fingerprint,
+        ]);
     }
 }
 
@@ -132,9 +338,66 @@ function noCacheHeaders(): void
     header('Expires: 0');
 }
 
+
 function noIndexHeaders(): void
 {
     header('X-Robots-Tag: noindex, nofollow, noarchive');
+}
+
+function sendFileCached(string $path, string $mime, ?string $downloadName = null): void
+{
+    if (!is_file($path)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $mtime = filemtime($path);
+    if ($mtime === false) {
+        $mtime = nowTs();
+    }
+    $size = filesize($path);
+    if ($size === false) {
+        $size = 0;
+    }
+
+    $etag = '"' . sha1($path . '|' . (string) $mtime . '|' . (string) $size) . '"';
+    $ifNoneMatch = trim((string) ($_SERVER['HTTP_IF_NONE_MATCH'] ?? ''));
+
+    if ($ifNoneMatch !== '') {
+        $candidates = array_map('trim', explode(',', $ifNoneMatch));
+        foreach ($candidates as $candidate) {
+            if ($candidate === $etag || $candidate === 'W/' . $etag) {
+                header('Cache-Control: public, max-age=31536000, immutable');
+                header('ETag: ' . $etag);
+                header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+                http_response_code(304);
+                exit;
+            }
+        }
+    }
+
+    $ifModifiedSince = trim((string) ($_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? ''));
+    if ($ifModifiedSince !== '') {
+        $ifModifiedSinceTs = strtotime($ifModifiedSince);
+        if ($ifModifiedSinceTs !== false && $ifModifiedSinceTs >= $mtime) {
+            header('Cache-Control: public, max-age=31536000, immutable');
+            header('ETag: ' . $etag);
+            header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+            http_response_code(304);
+            exit;
+        }
+    }
+
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header('ETag: ' . $etag);
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+    header('Content-Type: ' . $mime);
+    if ($downloadName !== null && $downloadName !== '') {
+        header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+    }
+    header('Content-Length: ' . (string) $size);
+    readfile($path);
+    exit;
 }
 
 function isValidToken(string $token): bool
@@ -179,4 +442,276 @@ function getOpenOrder(PDO $pdo, string $sessionToken, bool $create = true): ?arr
     $created = $stmt->fetch();
 
     return is_array($created) ? $created : null;
+}
+
+function getSetting(PDO $pdo, string $key, string $default = ''): string
+{
+    $stmt = $pdo->prepare('SELECT value FROM settings WHERE key = :key LIMIT 1');
+    $stmt->execute([':key' => $key]);
+    $value = $stmt->fetchColumn();
+    if (!is_string($value)) {
+        return $default;
+    }
+    return $value;
+}
+
+function setSetting(PDO $pdo, string $key, string $value): void
+{
+    $stmt = $pdo->prepare('INSERT INTO settings(key, value) VALUES(:key, :value) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    $stmt->execute([
+        ':key' => $key,
+        ':value' => $value,
+    ]);
+}
+
+function isPrintConfigured(?array $cfg = null): bool
+{
+    $cfg = $cfg ?? config();
+    $apiKey = trim((string) ($cfg['print_api_key'] ?? ''));
+    return $apiKey !== '' && $apiKey !== 'CHANGE_ME_PRINT_API_KEY';
+}
+
+function getConfiguredPrinterName(PDO $pdo): string
+{
+    $cfgPrinter = trim((string) (config()['printer_name'] ?? ''));
+    if ($cfgPrinter !== '') {
+        return $cfgPrinter;
+    }
+    return trim(getSetting($pdo, 'printer_name', ''));
+}
+
+
+function initMobileSession(): void
+{
+    session_name('pb_mobile');
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    if (!isset($_SESSION['favs']) || !is_array($_SESSION['favs'])) {
+        $_SESSION['favs'] = [];
+    }
+
+    $csrfToken = $_SESSION['csrf_token'] ?? '';
+    if (!is_string($csrfToken) || !preg_match('/^[a-f0-9]{32,128}$/', $csrfToken)) {
+        $_SESSION['csrf_token'] = random_token(32);
+    }
+}
+
+function getCsrfToken(): string
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        throw new RuntimeException('csrf_requires_active_session');
+    }
+
+    $token = $_SESSION['csrf_token'] ?? '';
+    if (!is_string($token) || !preg_match('/^[a-f0-9]{32,128}$/', $token)) {
+        $token = random_token(32);
+        $_SESSION['csrf_token'] = $token;
+    }
+
+    return $token;
+}
+
+function verifyCsrfToken(?string $provided): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+
+    $expected = $_SESSION['csrf_token'] ?? '';
+    if (!is_string($expected) || $expected === '') {
+        return false;
+    }
+
+    $provided = is_string($provided) ? trim($provided) : '';
+    if ($provided === '') {
+        return false;
+    }
+
+    return hash_equals($expected, $provided);
+}
+
+function isAdminEnabled(?array $cfg = null): bool
+{
+    $cfg = $cfg ?? config();
+    $code = trim((string) ($cfg['admin_code'] ?? ''));
+    if ($code !== '' && $code !== 'CHANGE_ME_ADMIN_CODE') {
+        return true;
+    }
+
+    $hash = trim((string) ($cfg['admin_password_hash'] ?? ''));
+    return $hash !== '' && $hash !== 'CHANGE_ME';
+}
+
+function adminCodeMatches(?string $providedCode, ?array $cfg = null): bool
+{
+    $cfg = $cfg ?? config();
+    $expected = trim((string) ($cfg['admin_code'] ?? ''));
+    if ($expected === '' || $expected === 'CHANGE_ME_ADMIN_CODE') {
+        return false;
+    }
+
+    $provided = trim((string) $providedCode);
+    if ($provided === '') {
+        return false;
+    }
+
+    return hash_equals($expected, $provided);
+}
+function createPrintTicket(string $photoId): string
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        throw new RuntimeException('print_ticket_requires_active_session');
+    }
+
+    if (!isset($_SESSION['print_tickets']) || !is_array($_SESSION['print_tickets'])) {
+        $_SESSION['print_tickets'] = [];
+    }
+
+    $token = generateToken(24);
+    $_SESSION['print_tickets'][$token] = [
+        'photo_id' => $photoId,
+        'expires_ts' => nowTs() + 300,
+    ];
+
+    foreach ($_SESSION['print_tickets'] as $key => $ticket) {
+        $expires = (int) (($ticket['expires_ts'] ?? 0));
+        if ($expires <= nowTs()) {
+            unset($_SESSION['print_tickets'][$key]);
+        }
+    }
+
+    return $token;
+}
+
+function consumePrintTicket(string $token, string $photoId): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+
+    $tickets = $_SESSION['print_tickets'] ?? [];
+    if (!is_array($tickets) || !isset($tickets[$token]) || !is_array($tickets[$token])) {
+        return false;
+    }
+
+    $ticket = $tickets[$token];
+    unset($_SESSION['print_tickets'][$token]);
+
+    $ticketPhotoId = (string) ($ticket['photo_id'] ?? '');
+    $expiresTs = (int) ($ticket['expires_ts'] ?? 0);
+
+    if ($ticketPhotoId === '' || $ticketPhotoId !== $photoId) {
+        return false;
+    }
+
+    return $expiresTs > nowTs();
+}
+
+function requireAdminSilently(): string
+{
+    $cfg = config();
+
+    session_name('pb_admin');
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    if (isset($_SESSION['pb_admin_ok']) && $_SESSION['pb_admin_ok'] === true) {
+        return 'session';
+    }
+
+    if (!isAdminEnabled($cfg)) {
+        header('Location: /mobile/', true, 302);
+        exit;
+    }
+
+    $providedCode = $_POST['code'] ?? ($_GET['code'] ?? '');
+    if (is_string($providedCode) && adminCodeMatches($providedCode, $cfg)) {
+        $_SESSION['pb_admin_ok'] = true;
+        session_regenerate_id(true);
+        return 'code';
+    }
+
+    $providedPassword = $_POST['password'] ?? '';
+    $hash = trim((string) ($cfg['admin_password_hash'] ?? ''));
+    if (is_string($providedPassword) && $providedPassword !== '' && $hash !== '' && $hash !== 'CHANGE_ME' && password_verify($providedPassword, $hash)) {
+        $_SESSION['pb_admin_ok'] = true;
+        session_regenerate_id(true);
+        return 'password';
+    }
+
+    header('Location: /mobile/', true, 302);
+    exit;
+}
+
+function adminActionLog(string $action, array $context = []): void
+{
+    $line = $action;
+    if ($context !== []) {
+        $line .= ' ' . json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    $path = pathLogs() . '/admin.log';
+    ensureDir((string) dirname($path));
+    logLine($path, $line);
+}
+
+// Legacy compatibility wrappers used by import/ and older web endpoints.
+function app_config(): array
+{
+    return config();
+}
+
+function app_paths(): array
+{
+    return [
+        'root' => ROOT,
+        'data' => pathData(),
+        'watch' => (string) config()['watch_path'],
+        'originals' => pathOriginals(),
+        'thumbs' => pathThumbs(),
+        'queue' => pathQueue(),
+        'logs' => pathLogs(),
+        'printfiles' => pathPrintfiles(),
+        'db' => dbPath(),
+    ];
+}
+
+function app_pdo(): PDO
+{
+    return pdo();
+}
+
+function initialize_database(): void
+{
+    initDb(pdo());
+}
+
+function write_log(string $file, string $line): void
+{
+    ensureDir((string) dirname($file));
+    logLine($file, $line);
+}
+
+function random_token(int $bytes = 18): string
+{
+    return generateToken($bytes);
+}
+
+function validate_token(string $token): bool
+{
+    return isValidToken($token);
+}
+
+function find_photo_by_token(string $token): ?array
+{
+    return findPhotoByToken(pdo(), $token);
+}
+
+function is_photo_printable(array $photo): bool
+{
+    $windowMinutes = (int) (config()['gallery_window_minutes'] ?? 15);
+    return nowTs() - (int) ($photo['ts'] ?? 0) <= ($windowMinutes * 60);
 }

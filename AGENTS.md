@@ -6,48 +6,53 @@
 - Nutzer: liefert Anforderungen, kann ZIP-Dateien geben, die Codex nicht sieht
 
 ## Arbeitsregeln
-- Keine Doku außerhalb README.md und AGENTS.md
-- Jede Doku-Änderung datieren
-- Wenn Anforderungen unklar: Annahmen als "Annahmen" mit Datum dokumentieren
+- Keine Doku außerhalb `README.md` und `AGENTS.md`
+- Jede Doku-Änderung datieren (Changelog-Eintrag)
+- Wenn Anforderungen unklar: Annahmen als `Annahmen` mit Datum dokumentieren
+- Kleine, inkrementelle Diffs bevorzugen
 
 ## Projektstruktur
 - `README.md`: Human-First Projekt- und Betriebsübersicht
 - `AGENTS.md`: Agent-First Arbeits-, Architektur- und Dokumentationsstandard
-- `web/gallery`: Galerie-Websegment für Admin/Monitor (lokal)
-- `web/mobile`: Handy-Websegment für Gäste und API
-- `import`: Importdienst- und Druckworker-CLI
-- `shared`: Gemeinsame Konfiguration, Bootstrap, Utilities
-- `data`: Eventdaten (`originals`, `thumbs`, `queue`, `logs`, `watch`); niemals Eventdateien committen
+- `web/index.php`: Root-Redirect auf `/mobile/`
+- `web/mobile`: Gäste-UI + API
+- `web/gallery`: öffentlicher Monitor (read-only) + optionales Admin-Login
+- `web/admin`: Admin-Panel für Jobs/Bestellungen/Bilder/Drucker
+- `import`: Ingest/Cleanup/Print-Worker CLI
+- `ops`: PowerShell-Ops und Druck-Helper
+- `shared`: Bootstrap, Konfiguration, Utilities
+- `runtime`: Laufzeit-Artefakte
+- `data`: Eventdaten (niemals Eventdateien committen)
 
-## Kernmodule
-### 2026-02-27 – Module
-- **Import**
-  - Zuständigkeit: Scan von `watch_path`, JPEG-Übernahme, Thumbnail-Erzeugung, Indexeintrag
-  - Inputs/Outputs: `watch_path` -> `data/originals`, `data/thumbs`, Tabelle `photos`
-- **Index**
-  - Zuständigkeit: SQLite-gestützte Auffindbarkeit per Token/Zeitraum/Pagination
-  - Inputs/Outputs: Tabelle `photos`, Token-Auflösung für Media-Endpunkte
-- **Web**
-  - Zuständigkeit: Mobile Gäste-UI, API-Endpunkte, Admin-Monitor
-  - Inputs/Outputs: Token-URLs, Session-Cookie, JSON-APIs
-- **Print**
-  - Zuständigkeit: Print-Queue-Anlage + serielle Worker-Verarbeitung
-  - Inputs/Outputs: Tabelle `print_jobs`, Spooler (`lp`/`lpr`)
-- **Cleanup**
-  - Zuständigkeit: Retention-Löschung (Dateisystem + DB-Flag)
-  - Inputs/Outputs: Entfernte Dateien, `photos.deleted=1`
+## Kernmodule (Ist-Stand)
+### 2026-03-05 – Konsolidierte Modulübersicht
+- **Import**: Übernahme von JPGs aus `watch_path` oder `sd_card_path`, Thumbnail-Erstellung, DB-Indexierung.
+- **Index**: SQLite-Auflösung für Token/ID, Listen und Media-Endpunkte.
+- **Mobile Web**: Galerie, Favoriten, Einzelbild, Download, Bestellung, Druck-APIs.
+- **Print**: Queue-Erstellung + Worker mit Spooler-Polling/Retry.
+- **Admin/Monitor**: Öffentliche Statussicht + geschütztes Admin-Handling.
+- **Cleanup**: Retention-Löschung im Dateisystem + DB-Markierung.
+
+## Verbindliche Security-/Privacy-Regeln
+- Token-/ID-basierter Medienzugriff, keine freien Dateipfade
+- CSRF-Prüfung für mutierende Session-Endpunkte
+- Rate-Limit über SQLite (`kv`) für relevante APIs
+- Print nur bei aktiver Konfiguration (Drucker oder API-Key)
+- `no-store`/`noindex` wo erforderlich
+- Keine Secrets hardcoden, produktive Werte nur in lokaler `shared/config.php`
+
+## Offline-first Regeln
+- Keine CDN-/Remote-Skripte
+- Keine verpflichtenden externen Requests im Laufzeitpfad
+- Lokale Systemzeit als einzige Zeitquelle
 
 ## Kommandos
-### 2026-02-27 – Verfügbare Befehle
-- start: `./start.ps1` (Windows Supervisor-Start, startet PHP `-t web` auf konfiguriertem Port)
-- stop: `./stop.ps1` (beendet Supervisor/PHP best-effort)
-- status: `./status.ps1` (zeigt Supervisor/PHP/Port/Watcher + Log-Tail)
-- legacy start (manuell): `php -S 0.0.0.0:8000 -t web`
-- test: _derzeit nicht definiert (MVP ohne Testsuite)_
-- lint: _derzeit nicht definiert_
-- build: _nicht erforderlich (PHP ohne Build-Schritt)_
+- start: `./start.ps1`
+- stop: `./stop.ps1`
+- status: `./status.ps1`
 - db init: `php import/import_service.php init-db`
 - ingest: `php import/import_service.php ingest`
+- ingest-file: `php import/import_service.php ingest-file <path>`
 - cleanup: `php import/import_service.php cleanup`
 - print worker: `php import/print_worker.php run`
 
@@ -162,35 +167,27 @@
 - Keine externen Requests, keine CDN-Assets, keine Remote-Skripte
 - QR-Ziel zeigt immer auf lokale URL (`hostname` oder `LAN-IP`)
 - Kein Online-Time-Sync im Code; nur lokale Systemzeit verwenden
+- print worker daemon: `php import/print_worker.php run-loop [sleep_seconds]`
 
 ## Boundaries
 ### ALWAYS
-- Kleine Diffs, inkrementell
-- Security by default (keine offenen Uploads/Directory Listing)
-- Dokumentationsupdate mit Datum bei jeder Verhaltensänderung
+- Security by default
+- Doku-Update mit Datum bei Verhaltensänderung
+- Bestehende Architektur inkrementell erweitern
 
 ### ASK FIRST
 - Neue Dependencies
 - Neue Ports/Netzwerkfreigaben
-- Löschen/Umbenennen von Dateien, Datenmigrationen
+- Löschen/Umbenennen von Dateien
+- Datenmigrationen mit potenziell inkompatiblen Änderungen
 
 ### NEVER
 - Doku außerhalb README/AGENTS
-- Unsichere Defaults (unauth endpoints, direkte Dateipfade)
-- Hardcoding von Secrets
+- Unsichere Defaults (offene Admin-Endpunkte, direkte Dateipfade)
+- Secrets im Code/Repo
 
-## Decision Log
-- 2026-02-27 – Entscheidung: Zeitfenster-Galerie statt Vollgalerie.
-  - Kontext: Eventgalerien benötigen einfachen Zugriff für Gäste, aber begrenzte Sichtbarkeit aus Datenschutz- und Übersichtsgründen.
-  - Alternativen: Vollgalerie ohne Zeitlimit; passwortgeschützte Vollgalerie; rein lokaler Einzelzugriff.
-  - Konsequenzen: Bessere Privatsphäre und übersichtlichere Nutzung, aber zusätzlicher Aufwand für Zeitfenster-Konfiguration.
-- 2026-02-27 – Entscheidung: Offline-first ohne externe APIs/Composer.
-  - Kontext: stabile Nutzung auch ohne Internetzugriff auf Events.
-  - Alternativen: Cloud-Services für Queue/Storage/Auth.
-  - Konsequenzen: geringere Ausfallrisiken, aber mehr lokale Betriebsverantwortung.
-
-## Startstatus
-- 2026-02-27: Repository-Grundgerüst für "Hochzeits-Fotobox" initialisiert.
+## Annahmen
+- 2026-03-05 – Reifegradbewertung in README ist eine Architektur-/Betriebsbewertung für den aktuellen MVP-Stand, keine formale Zertifizierung oder Lasttest-Aussage.
 
 ## Changelog
 - 2026-02-27 – Ops-Log-Sync gehärtet: lock-tolerantes Lesen von `php.stdout.current.log`/`php.stderr.current.log` via `FileShare.ReadWrite`, Retry-Backoff (100/300/800 ms), danach `WARN` + Continue; Zugriff serialisiert per Mutex, `start.ps1` fängt Sync-Fehler defensiv ab.
@@ -205,3 +202,4 @@
 - 2026-02-27 – Projektstruktur aktualisiert: Segmentpfade und Verantwortlichkeiten ergänzt; Hinweis zu `data/` und `.gitkeep` ergänzt.
 - 2026-02-27 – Verbindlichen Dokumentationsstandard, Boundaries, Decision-Log-Format und Pflichtinhalte ergänzt.
 - 2026-02-27 – Initiale Arbeitsregeln und Rollen dokumentiert.
+- 2026-03-05 – AGENTS konsolidiert: redundante Historienblöcke entfernt, Modul-/Boundary-Regeln auf aktuellen Repo-Stand verdichtet, Security-/Offline-first Leitplanken präzisiert.
