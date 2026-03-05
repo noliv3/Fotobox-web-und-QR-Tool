@@ -6,15 +6,37 @@ require_once __DIR__ . '/../../shared/bootstrap.php';
 
 noCacheHeaders();
 
+session_name('pb_gallery');
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token']) || $_SESSION['csrf_token'] === '') {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
+}
+$csrfToken = (string) $_SESSION['csrf_token'];
+
 $pdo = pdo();
 $now = date('Y-m-d H:i:s');
 $photoCount = (int) $pdo->query('SELECT COUNT(*) FROM photos WHERE deleted = 0')->fetchColumn();
 $lastImportTs = (int) $pdo->query('SELECT COALESCE(MAX(ts),0) FROM photos WHERE deleted = 0')->fetchColumn();
-$photos = $pdo->query('SELECT token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 12')->fetchAll();
+$photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 12')->fetchAll();
 
 $openPrintJobs = (int) $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status IN ('queued','spooled','needs_attention')")->fetchColumn();
 $needsAttentionJobs = $pdo->query("SELECT id, last_error, created_ts FROM print_jobs WHERE status = 'needs_attention' ORDER BY updated_at DESC, id DESC LIMIT 5")->fetchAll();
 $lastJobs = $pdo->query('SELECT id, status, created_ts FROM print_jobs ORDER BY id DESC LIMIT 20')->fetchAll();
+
+$heartCounts = [];
+if ($photos !== []) {
+    $heartStmt = $pdo->prepare('SELECT value FROM kv WHERE key = :key LIMIT 1');
+    foreach ($photos as $photo) {
+        $photoId = (string) ($photo['id'] ?? '');
+        if ($photoId === '') {
+            continue;
+        }
+        $heartStmt->execute([':key' => 'heart_total_' . $photoId]);
+        $heartCounts[$photoId] = (int) ($heartStmt->fetchColumn() ?: 0);
+    }
+}
 
 function printErrorLabel(string $error): string
 {
@@ -33,6 +55,7 @@ function printErrorLabel(string $error): string
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Galerie Status</title>
     <link rel="stylesheet" href="/gallery/style.css">
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
 </head>
 <body>
 <main class="container">
@@ -78,14 +101,20 @@ function printErrorLabel(string $error): string
         <h2>Letzte 12 Fotos</h2>
         <div class="photo-grid">
             <?php foreach ($photos as $photo): ?>
-                <a class="photo-card" href="/mobile/photo.php?t=<?= urlencode((string) $photo['token']) ?>">
-                    <img src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto" loading="lazy">
-                    <span><?= date('d.m. H:i', (int) $photo['ts']) ?></span>
-                </a>
+                <article class="photo-item">
+                    <a class="photo-card" href="/mobile/photo.php?t=<?= urlencode((string) $photo['token']) ?>">
+                        <img src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto" loading="lazy">
+                        <span><?= date('d.m. H:i', (int) $photo['ts']) ?></span>
+                    </a>
+                    <button type="button" class="heart-button" data-heart-button data-photo-id="<?= htmlspecialchars((string) $photo['id'], ENT_QUOTES, 'UTF-8') ?>">
+                        ❤️ <span data-heart-count><?= (int) ($heartCounts[(string) $photo['id']] ?? 0) ?></span>
+                    </button>
+                </article>
             <?php endforeach; ?>
         </div>
     </section>
 
 </main>
+<script src="/gallery/app.js" defer></script>
 </body>
 </html>

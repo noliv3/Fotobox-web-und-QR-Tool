@@ -297,3 +297,28 @@ input[type="text"], input[type="time"], input[type="number"] {
   background: #fff;
   line-height: 1;
 }
+
+.photo-stage {
+  background: #000;
+  border-radius: 11px;
+  overflow: hidden;
+  min-height: 48vh;
+  display: grid;
+  place-items: center;
+  padding: .4rem;
+}
+
+.photo-stage:fullscreen {
+  border-radius: 0;
+  min-height: 100vh;
+  padding: .8rem;
+}
+
+.detail-image {
+  transition: transform .15s ease;
+  transform-origin: center center;
+}
+
+[data-photo-tools] input[type="range"] {
+  width: 7.2rem;
+}

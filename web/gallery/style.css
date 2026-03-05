@@ -65,3 +65,25 @@ button, .button {
   font-size: .78rem;
   color: #606e82;
 }
+
+.heart-button {
+  border: 1px solid #ffd4e2;
+  border-radius: 999px;
+  background: #fff4f8;
+  color: #b0004f;
+  padding: .35rem .55rem;
+  font-weight: 600;
+}
+
+.heart-button.heart-pop {
+  transform: scale(1.08);
+}
+
+.photo-item {
+  display: grid;
+  gap: .35rem;
+}
+
+.heart-button {
+  justify-self: start;
+}

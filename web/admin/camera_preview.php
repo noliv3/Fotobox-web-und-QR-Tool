@@ -19,10 +19,8 @@ function outputFallback(): void
     exit;
 }
 
-function fetchPreview(): ?array
+function fetchPreviewFromUrl(string $url): ?array
 {
-    $url = 'http://127.0.0.1:5513/preview.jpg';
-
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -45,11 +43,11 @@ function fetchPreview(): ?array
         curl_close($ch);
 
         $body = (string) substr($raw, $headerSize);
-        if ($status !== 200 || $body === '') {
-            return null;
+        if ($status === 200 && $body !== '') {
+            return ['type' => $type, 'body' => $body];
         }
 
-        return ['type' => $type, 'body' => $body];
+        return null;
     }
 
     $context = stream_context_create([
@@ -77,6 +75,23 @@ function fetchPreview(): ?array
     return ['type' => $type, 'body' => $body];
 }
 
+function fetchPreview(): ?array
+{
+    $urls = [
+        'http://127.0.0.1:5513/liveview.jpg',
+        'http://127.0.0.1:5513/preview.jpg',
+    ];
+
+    foreach ($urls as $url) {
+        $preview = fetchPreviewFromUrl($url);
+        if (is_array($preview)) {
+            return $preview;
+        }
+    }
+
+    return null;
+}
+
 $preview = fetchPreview();
 if (!is_array($preview)) {
     outputFallback();
@@ -92,4 +107,3 @@ header('Content-Type: image/jpeg');
 header('Content-Length: ' . strlen($body));
 echo $body;
 exit;
-

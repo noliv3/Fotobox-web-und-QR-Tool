@@ -398,6 +398,14 @@ try {
         Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "PHP Prozess gestoppt (PID $($phpProcess.Id))."
     }
 
+    foreach ($procName in @('digiCamControl', 'CameraControl')) {
+        $dccStopProc = Get-Process -Name $procName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $dccStopProc) {
+            Stop-Process -Id $dccStopProc.Id -Force -ErrorAction SilentlyContinue
+            Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "Supervisor-Shutdown hat $procName beendet (PID $($dccStopProc.Id))."
+        }
+    }
+
     $state.watcher_active = $false
     $state.last_heartbeat = (Get-Date).ToString('s')
     if ($state.status -eq 'RUNNING') {

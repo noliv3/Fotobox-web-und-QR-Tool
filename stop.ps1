@@ -29,6 +29,15 @@ if ($state.supervisor_pid) {
     }
 }
 
+
+foreach ($procName in @('digiCamControl', 'CameraControl')) {
+    $dccProc = Get-Process -Name $procName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $dccProc) {
+        Stop-Process -Id $dccProc.Id -Force -ErrorAction SilentlyContinue
+        Write-PhotoboxLog -Path $supervisorLog -Level 'INFO' -Message "stop.ps1 hat $procName beendet (PID $($dccProc.Id))."
+    }
+}
+
 $newState = @{
     supervisor_pid = 0
     php_pid = 0
