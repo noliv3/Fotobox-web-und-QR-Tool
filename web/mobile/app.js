@@ -258,6 +258,87 @@
   }
 
 
+
+  function bindPhotoTools() {
+    const stage = document.querySelector('[data-photo-stage]');
+    const image = document.querySelector('[data-detail-image]');
+    if (!stage || !image) return;
+
+    const zoomSlider = document.querySelector('[data-photo-zoom-slider]');
+    const btnZoomIn = document.querySelector('[data-photo-zoom-in]');
+    const btnZoomOut = document.querySelector('[data-photo-zoom-out]');
+    const btnRotateLeft = document.querySelector('[data-photo-rotate-left]');
+    const btnRotateRight = document.querySelector('[data-photo-rotate-right]');
+    const btnReset = document.querySelector('[data-photo-reset]');
+    const btnFullscreen = document.querySelector('[data-photo-fullscreen]');
+
+    let zoom = 1;
+    let rotation = 0;
+
+    const clampZoom = (value) => Math.min(3, Math.max(1, value));
+    const applyTransform = () => {
+      image.style.transform = 'scale(' + zoom.toFixed(2) + ') rotate(' + rotation + 'deg)';
+      if (zoomSlider) zoomSlider.value = zoom.toFixed(1);
+    };
+
+    if (zoomSlider) {
+      zoomSlider.addEventListener('input', () => {
+        zoom = clampZoom(Number(zoomSlider.value || '1'));
+        applyTransform();
+      });
+    }
+
+    if (btnZoomIn) {
+      btnZoomIn.addEventListener('click', () => {
+        zoom = clampZoom(zoom + 0.1);
+        applyTransform();
+      });
+    }
+
+    if (btnZoomOut) {
+      btnZoomOut.addEventListener('click', () => {
+        zoom = clampZoom(zoom - 0.1);
+        applyTransform();
+      });
+    }
+
+    if (btnRotateLeft) {
+      btnRotateLeft.addEventListener('click', () => {
+        rotation -= 90;
+        applyTransform();
+      });
+    }
+
+    if (btnRotateRight) {
+      btnRotateRight.addEventListener('click', () => {
+        rotation += 90;
+        applyTransform();
+      });
+    }
+
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        zoom = 1;
+        rotation = 0;
+        applyTransform();
+      });
+    }
+
+    if (btnFullscreen) {
+      btnFullscreen.addEventListener('click', () => {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+          return;
+        }
+        stage.requestFullscreen?.().catch(() => {
+          showToast('Vollbild nicht verfügbar');
+        });
+      });
+    }
+
+    applyTransform();
+  }
+
   function bindOrderForm() {
     const form = document.querySelector('[data-order-form]');
     if (!form) return;
@@ -320,6 +401,7 @@
   bindFavButtons();
   bindPrintForms();
   bindOrderForm();
+  bindPhotoTools();
   document.querySelectorAll('[data-photo-tile]').forEach(bindTileLongPress);
 
   window.showToast = showToast;

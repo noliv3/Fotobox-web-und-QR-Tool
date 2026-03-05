@@ -60,7 +60,18 @@ if ($photo === null) {
     $isFav = isset($_SESSION['favs'][(string) $photo['id']]);
     $printTicket = createPrintTicket((string) $photo['id']);
     ?>
-    <img class="detail-image" src="/mobile/image.php?id=<?= urlencode((string) $photo['id']) ?>&amp;type=original" alt="Foto">
+    <div class="photo-stage" data-photo-stage>
+        <img class="detail-image" data-detail-image src="/mobile/image.php?id=<?= urlencode((string) $photo['id']) ?>&amp;type=original" alt="Foto">
+    </div>
+    <div class="panel actions" data-photo-tools>
+        <button type="button" class="button-muted" data-photo-fullscreen>Vollbild</button>
+        <button type="button" class="button-muted" data-photo-zoom-out>-</button>
+        <input type="range" min="1" max="3" step="0.1" value="1" data-photo-zoom-slider aria-label="Zoom">
+        <button type="button" class="button-muted" data-photo-zoom-in>+</button>
+        <button type="button" class="button-muted" data-photo-rotate-left>↺</button>
+        <button type="button" class="button-muted" data-photo-rotate-right>↻</button>
+        <button type="button" class="button-muted" data-photo-reset>Reset</button>
+    </div>
     <div class="panel muted">Aufnahme: <?= date('d.m.Y H:i:s', (int) $photo['ts']) ?></div>
     <div class="panel actions">
         <a class="button" href="/mobile/download.php?id=<?= urlencode((string) $photo['id']) ?>">Download</a>
