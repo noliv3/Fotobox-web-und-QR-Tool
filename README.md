@@ -95,4 +95,5 @@ Wichtige Schlüssel:
 - `rate_limit_max`, `rate_limit_window_seconds`
 
 ## Changelog
+- 2026-03-05 – Merkliste korrigiert: in `view=favs` bleibt `Alle als ZIP` erhalten; entfernt wurde nur der Upload-Akzent (`Eigenes Bild drucken`) aus den Merkliste-Actions.
 - 2026-03-05 – README konsolidiert: vollständige Prozessübersicht ergänzt, doppelte/überlange Historienblöcke entfernt, Reifegradbewertung „Wie nah an kompletter Fotobox“ ergänzt.

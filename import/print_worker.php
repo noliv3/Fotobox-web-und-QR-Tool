@@ -73,8 +73,20 @@ function run_worker_once(): void
         return;
     }
 
+    if (hasActivePipelineJob($pdo)) {
+        write_log($log, 'worker_run_stop backpressure active_job');
+        return;
+    }
+
     submitNextQueuedJob($pdo, $printerName, $log);
     write_log($log, 'worker_run_stop');
+}
+
+function hasActivePipelineJob(PDO $pdo): bool
+{
+    $stmt = $pdo->query("SELECT COUNT(*) FROM print_jobs WHERE status IN ('sending','spooled')");
+    $count = (int) $stmt->fetchColumn();
+    return $count > 0;
 }
 
 function recoverTransientAttentionJobs(PDO $pdo, string $log): void

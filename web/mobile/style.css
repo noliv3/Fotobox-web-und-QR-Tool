@@ -259,6 +259,12 @@ input[type="text"], input[type="time"], input[type="number"] {
   transition: all .2s ease;
 }
 
+.upload-print-form {
+  display: grid;
+  gap: .55rem;
+  margin-top: .65rem;
+}
+
 .order-done-summary p {
   margin: .25rem 0;
 }

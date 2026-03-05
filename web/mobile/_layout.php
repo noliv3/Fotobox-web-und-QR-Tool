@@ -45,6 +45,7 @@ function mobileRenderLayout(array $params): void
         <div class="menu-overlay" data-menu-overlay hidden>
             <div class="menu-panel" role="dialog" aria-label="Menue">
                 <a href="/gallery/">Galerie</a>
+                <a href="/mobile/upload_print.php">Eigenes Bild drucken</a>
                 <?php if ($impressumExists): ?>
                     <a href="/impressum">Impressum</a>
                 <?php endif; ?>

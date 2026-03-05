@@ -78,4 +78,5 @@
 - 2026-03-05 – Reifegradbewertung in README ist eine Architektur-/Betriebsbewertung für den aktuellen MVP-Stand, keine formale Zertifizierung oder Lasttest-Aussage.
 
 ## Changelog
+- 2026-03-05 – Klarstellung umgesetzt: In der Merkliste (`/mobile/?view=favs`) bleibt der ZIP-Download (`Alle als ZIP`) aktiv; nur der Upload-Akzent wurde aus den Merkliste-Actions entfernt.
 - 2026-03-05 – AGENTS konsolidiert: redundante Historienblöcke entfernt, Modul-/Boundary-Regeln auf aktuellen Repo-Stand verdichtet, Security-/Offline-first Leitplanken präzisiert.
