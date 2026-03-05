@@ -79,4 +79,3 @@
 
 ## Changelog
 - 2026-03-05 – AGENTS konsolidiert: redundante Historienblöcke entfernt, Modul-/Boundary-Regeln auf aktuellen Repo-Stand verdichtet, Security-/Offline-first Leitplanken präzisiert.
-- 2026-03-05 – Feature-Update dokumentiert: Mobile-Fotoansicht mit Vollbild/Zoom/Rotation, Galerie-Herzchenmodus (unlimitierte Klicks), Merkliste ohne ZIP-Button sowie digiCamControl-Best-Effort-Stop in `start.ps1`/`stop.ps1`; Admin-Kameravorschau probiert `liveview.jpg` vor `preview.jpg`.

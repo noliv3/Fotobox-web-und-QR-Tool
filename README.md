@@ -96,4 +96,3 @@ Wichtige Schlüssel:
 
 ## Changelog
 - 2026-03-05 – README konsolidiert: vollständige Prozessübersicht ergänzt, doppelte/überlange Historienblöcke entfernt, Reifegradbewertung „Wie nah an kompletter Fotobox“ ergänzt.
-- 2026-03-05 – UX/Ops-Update: In der Merkliste wurde der ZIP-Button entfernt (fokussiert auf Drucken/Bestellen). `web/mobile/photo.php` + `web/mobile/app.js` + `web/mobile/style.css` ergänzen Vollbild-, Zoom- und Rotationssteuerung pro Bild. `web/gallery/index.php` + `web/gallery/api_heart.php` + `web/gallery/app.js` + `web/gallery/style.css` führen einen öffentlichen Herzchenmodus mit unlimitierten Klicks pro Gast ein (Zähler über `kv`). `web/admin/camera_preview.php` versucht jetzt zuerst `liveview.jpg`, dann `preview.jpg`; `start.ps1`/`stop.ps1` beenden digiCamControl beim Service-Shutdown best-effort.
