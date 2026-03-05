@@ -220,6 +220,7 @@ function run_cleanup(): void
     }
 
     cleanup_printfiles($pdo, $paths, $log);
+    cleanup_upload_sessions($paths, $cfg, $log);
 }
 
 function cleanup_printfiles(PDO $pdo, array $paths, string $log): void
@@ -249,6 +250,98 @@ function cleanup_printfiles(PDO $pdo, array $paths, string $log): void
             write_log($log, 'Printfile gelöscht: ' . basename($path));
         }
     }
+}
+
+function cleanup_upload_sessions(array $paths, array $cfg, string $log): void
+{
+    $dataDir = trim((string) ($paths['data'] ?? ''));
+    if ($dataDir === '') {
+        return;
+    }
+
+    $uploadsRoot = $dataDir . DIRECTORY_SEPARATOR . 'uploads';
+    if (!is_dir($uploadsRoot)) {
+        return;
+    }
+
+    $retentionHours = (int) ($cfg['upload_print_retention_hours'] ?? 24);
+    $retentionHours = max(1, min(168, $retentionHours));
+    $staleBefore = nowTs() - ($retentionHours * 3600);
+
+    $entries = scandir($uploadsRoot);
+    if (!is_array($entries)) {
+        return;
+    }
+
+    foreach ($entries as $entry) {
+        if ($entry === '.' || $entry === '..' || !str_starts_with($entry, 'session_')) {
+            continue;
+        }
+
+        $sessionDir = $uploadsRoot . DIRECTORY_SEPARATOR . $entry;
+        if (!is_dir($sessionDir) || is_link($sessionDir)) {
+            continue;
+        }
+
+        $lastTouched = upload_dir_last_touched($sessionDir);
+        if ($lastTouched > $staleBefore) {
+            continue;
+        }
+
+        if (delete_dir_tree($sessionDir)) {
+            write_log($log, 'Upload-Session gelöscht: ' . $entry);
+        } else {
+            write_log($log, 'Upload-Session löschen fehlgeschlagen: ' . $entry);
+        }
+    }
+}
+
+function upload_dir_last_touched(string $dir): int
+{
+    $latest = filemtime($dir);
+    $latestTs = is_int($latest) ? $latest : 0;
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+
+    foreach ($iterator as $fileInfo) {
+        $mtime = $fileInfo->getMTime();
+        if ($mtime > $latestTs) {
+            $latestTs = $mtime;
+        }
+    }
+
+    return $latestTs;
+}
+
+function delete_dir_tree(string $dir): bool
+{
+    if (!is_dir($dir) || is_link($dir)) {
+        return false;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+
+    foreach ($iterator as $fileInfo) {
+        $path = $fileInfo->getPathname();
+        if ($fileInfo->isDir()) {
+            if (!@rmdir($path)) {
+                return false;
+            }
+            continue;
+        }
+
+        if (!@unlink($path)) {
+            return false;
+        }
+    }
+
+    return @rmdir($dir);
 }
 
 function create_thumbnail(string $source, string $destination, int $targetWidth): bool

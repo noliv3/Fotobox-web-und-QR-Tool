@@ -28,6 +28,11 @@ return [
     // Printing
     'printer_name' => '',                      // optional, je nach Implementierung
     'print_api_key' => 'CHANGE_ME_PRINT_API_KEY',
+    'upload_print_max_files' => 12,            // max. Uploads je mobile Session
+    'upload_print_max_total_mb' => 80,         // max. Upload-Speicher je mobile Session
+    'upload_print_max_age_hours' => 12,        // Ablauf je Upload in Session
+    'upload_print_retention_hours' => 24,      // Cleanup für alte Upload-Session-Ordner
+    'upload_print_max_dimension' => 12000,     // max. Breite/Höhe in Pixel
 
 
     // Orders

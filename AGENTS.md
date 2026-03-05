@@ -76,7 +76,9 @@
 
 ## Annahmen
 - 2026-03-05 – Reifegradbewertung in README ist eine Architektur-/Betriebsbewertung für den aktuellen MVP-Stand, keine formale Zertifizierung oder Lasttest-Aussage.
+- 2026-03-05 – „Verfeinern und Härten aller Funktionen“ wird als Härtung der sicherheits-/betriebsrelevanten Laufzeitpfade umgesetzt (Upload/Preview/Print/Cleanup), nicht als kompletter Refactor aller Dateien.
 
 ## Changelog
+- 2026-03-05 – Upload-Print-Flow gehärtet: Upload-Validierung und Session-Limits ergänzt, Upload-Bildausgabe entkoppelt (Session-Lock), transaktionale Job-Anlage stabilisiert, Cleanup alter Upload-Session-Verzeichnisse ergänzt.
 - 2026-03-05 – Klarstellung umgesetzt: In der Merkliste (`/mobile/?view=favs`) bleibt der ZIP-Download (`Alle als ZIP`) aktiv; nur der Upload-Akzent wurde aus den Merkliste-Actions entfernt.
 - 2026-03-05 – AGENTS konsolidiert: redundante Historienblöcke entfernt, Modul-/Boundary-Regeln auf aktuellen Repo-Stand verdichtet, Security-/Offline-first Leitplanken präzisiert.

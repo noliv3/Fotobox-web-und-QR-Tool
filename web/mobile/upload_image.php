@@ -31,11 +31,6 @@ if (!is_string($sessionId) || $sessionId === '') {
     exit('not_found');
 }
 $dir = pathData() . '/uploads/session_' . $sessionId;
-$base = realpath($dir);
-if ($base === false) {
-    http_response_code(404);
-    exit('not_found');
-}
 
 $filename = basename((string) ($item['filename'] ?? ''));
 if ($filename === '') {
@@ -43,14 +38,8 @@ if ($filename === '') {
     exit('not_found');
 }
 
-$path = realpath($base . '/' . $filename);
-if ($path === false || !is_file($path)) {
-    http_response_code(404);
-    exit('not_found');
-}
-
-$prefix = rtrim($base, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
-if (strpos($path, $prefix) !== 0) {
+$path = resolvePathInDirectory($dir, $filename);
+if ($path === null) {
     http_response_code(404);
     exit('not_found');
 }
@@ -60,8 +49,12 @@ if ($mime !== 'image/jpeg' && $mime !== 'image/png') {
     $mime = 'image/jpeg';
 }
 
+session_write_close();
 header('Content-Type: ' . $mime);
-header('Content-Length: ' . filesize($path));
+header('X-Content-Type-Options: nosniff');
+$size = filesize($path);
+if (is_int($size) && $size >= 0) {
+    header('Content-Length: ' . (string) $size);
+}
 readfile($path);
 exit;
-

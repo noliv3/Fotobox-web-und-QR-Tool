@@ -17,6 +17,17 @@ if (!isset($_SESSION['upload_print_items']) || !is_array($_SESSION['upload_print
     $_SESSION['upload_print_items'] = [];
 }
 
+function uploadPrintConfigInt(array $cfg, string $key, int $default, int $min, int $max): int
+{
+    $value = (int) ($cfg[$key] ?? $default);
+    return max($min, min($max, $value));
+}
+
+function uploadPrintIsValidId(string $id): bool
+{
+    return (bool) preg_match('/^[a-f0-9]{24}$/', $id);
+}
+
 function uploadPrintSessionDir(): string
 {
     $sessionId = preg_replace('/[^a-zA-Z0-9]/', '', session_id());
@@ -26,32 +37,110 @@ function uploadPrintSessionDir(): string
     return pathData() . '/uploads/session_' . $sessionId;
 }
 
-function resolveUploadPrintFile(string $id, array $item): ?string
+function resolveUploadPrintFile(array $item): ?string
 {
     $dir = uploadPrintSessionDir();
-    $base = realpath($dir);
-    if ($base === false) {
-        return null;
-    }
-
     $filename = basename((string) ($item['filename'] ?? ''));
     if ($filename === '') {
         return null;
     }
-    $path = realpath($base . '/' . $filename);
-    if ($path === false || !is_file($path)) {
-        return null;
-    }
 
-    $prefix = rtrim($base, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
-    if (strpos($path, $prefix) !== 0) {
+    $path = resolvePathInDirectory($dir, $filename);
+    if ($path === null) {
         return null;
     }
 
     return $path;
 }
 
-function uploadPrintStoreItem(array $file): array
+function uploadPrintPruneSessionItems(array $cfg): void
+{
+    $items = $_SESSION['upload_print_items'] ?? [];
+    if (!is_array($items)) {
+        $_SESSION['upload_print_items'] = [];
+        return;
+    }
+
+    $maxFiles = uploadPrintConfigInt($cfg, 'upload_print_max_files', 12, 1, 200);
+    $maxTotalMb = uploadPrintConfigInt($cfg, 'upload_print_max_total_mb', 80, 10, 1024);
+    $maxAgeHours = uploadPrintConfigInt($cfg, 'upload_print_max_age_hours', 12, 1, 168);
+    $maxTotalBytes = $maxTotalMb * 1024 * 1024;
+    $maxAgeSeconds = $maxAgeHours * 3600;
+    $now = nowTs();
+
+    $validRows = [];
+    $deletePaths = [];
+
+    foreach ($items as $id => $item) {
+        if (!is_string($id) || !uploadPrintIsValidId($id) || !is_array($item)) {
+            continue;
+        }
+
+        $createdTs = (int) ($item['created_ts'] ?? 0);
+        if ($createdTs <= 0) {
+            $createdTs = $now;
+        }
+        if (($createdTs + $maxAgeSeconds) < $now) {
+            $stalePath = resolveUploadPrintFile($item);
+            if ($stalePath !== null) {
+                $deletePaths[$stalePath] = true;
+            }
+            continue;
+        }
+
+        $path = resolveUploadPrintFile($item);
+        if ($path === null) {
+            continue;
+        }
+
+        $size = filesize($path);
+        $sizeBytes = is_int($size) && $size > 0 ? $size : 0;
+        if ($sizeBytes <= 0) {
+            $deletePaths[$path] = true;
+            continue;
+        }
+
+        $item['id'] = $id;
+        $item['filename'] = basename((string) ($item['filename'] ?? ''));
+        $item['mime'] = strtolower(trim((string) ($item['mime'] ?? '')));
+        $item['created_ts'] = $createdTs;
+        $item['file_size'] = $sizeBytes;
+        $validRows[] = $item;
+    }
+
+    usort($validRows, static function (array $a, array $b): int {
+        return ((int) ($b['created_ts'] ?? 0)) <=> ((int) ($a['created_ts'] ?? 0));
+    });
+
+    $kept = [];
+    $totalBytes = 0;
+    foreach ($validRows as $row) {
+        $id = (string) ($row['id'] ?? '');
+        $sizeBytes = (int) ($row['file_size'] ?? 0);
+        $path = resolveUploadPrintFile($row);
+        if (!uploadPrintIsValidId($id) || $sizeBytes <= 0 || $path === null) {
+            continue;
+        }
+
+        if (count($kept) >= $maxFiles || ($totalBytes + $sizeBytes) > $maxTotalBytes) {
+            $deletePaths[$path] = true;
+            continue;
+        }
+
+        $totalBytes += $sizeBytes;
+        $kept[$id] = $row;
+    }
+
+    foreach (array_keys($deletePaths) as $path) {
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+
+    $_SESSION['upload_print_items'] = $kept;
+}
+
+function uploadPrintStoreItem(array $file, array $cfg): array
 {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         return [false, 'Bitte eine JPG- oder PNG-Datei auswählen.'];
@@ -67,6 +156,31 @@ function uploadPrintStoreItem(array $file): array
         return [false, 'Datei ist zu groß (maximal 15 MB).'];
     }
 
+    $maxFiles = uploadPrintConfigInt($cfg, 'upload_print_max_files', 12, 1, 200);
+    if (count($_SESSION['upload_print_items']) >= $maxFiles) {
+        return [false, 'Maximale Anzahl an Uploads in dieser Session erreicht.'];
+    }
+
+    $maxTotalMb = uploadPrintConfigInt($cfg, 'upload_print_max_total_mb', 80, 10, 1024);
+    $maxTotalBytes = $maxTotalMb * 1024 * 1024;
+    $usedBytes = 0;
+    foreach ($_SESSION['upload_print_items'] as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $path = resolveUploadPrintFile($item);
+        if ($path === null) {
+            continue;
+        }
+        $itemSize = filesize($path);
+        if (is_int($itemSize) && $itemSize > 0) {
+            $usedBytes += $itemSize;
+        }
+    }
+    if (($usedBytes + $size) > $maxTotalBytes) {
+        return [false, 'Upload-Limit für diese Session erreicht. Bitte erst Bilder löschen.'];
+    }
+
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime = (string) ($finfo->file($tmp) ?: '');
     $ext = '';
@@ -78,7 +192,22 @@ function uploadPrintStoreItem(array $file): array
         return [false, 'Nur JPG oder PNG ist erlaubt.'];
     }
 
+    $imageInfo = @getimagesize($tmp);
+    if (!is_array($imageInfo)) {
+        return [false, 'Datei ist kein gültiges Bild.'];
+    }
+    $width = (int) ($imageInfo[0] ?? 0);
+    $height = (int) ($imageInfo[1] ?? 0);
+    if ($width <= 0 || $height <= 0) {
+        return [false, 'Bildabmessungen sind ungültig.'];
+    }
+    $maxDimension = uploadPrintConfigInt($cfg, 'upload_print_max_dimension', 12000, 512, 30000);
+    if ($width > $maxDimension || $height > $maxDimension) {
+        return [false, 'Bild ist zu groß (Pixelmaß).'];
+    }
+
     $id = bin2hex(random_bytes(12));
+    ensureDir(pathData() . '/uploads');
     $dir = uploadPrintSessionDir();
     ensureDir($dir);
     $target = $dir . '/' . $id . '.' . $ext;
@@ -91,6 +220,9 @@ function uploadPrintStoreItem(array $file): array
         'filename' => basename($target),
         'mime' => $mime,
         'created_ts' => nowTs(),
+        'file_size' => $size,
+        'width' => $width,
+        'height' => $height,
         'orig_name' => textSubstr((string) ($file['name'] ?? ''), 0, 120),
     ];
 
@@ -99,6 +231,7 @@ function uploadPrintStoreItem(array $file): array
 
 $flash = '';
 $error = '';
+uploadPrintPruneSessionItems($cfg);
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (!verifyCsrfToken((string) ($_POST['csrf_token'] ?? ''))) {
@@ -111,7 +244,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['rate_limit_window_seconds'])) {
                 $error = 'Zu viele Anfragen, bitte kurz warten.';
             } else {
-                [$ok, $message] = uploadPrintStoreItem($_FILES['upload_file'] ?? []);
+                [$ok, $message] = uploadPrintStoreItem($_FILES['upload_file'] ?? [], $cfg);
                 if ($ok) {
                     $flash = (string) $message;
                 } else {
@@ -120,8 +253,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
         } elseif ($action === 'delete') {
             $id = trim((string) ($_POST['id'] ?? ''));
-            if (isset($_SESSION['upload_print_items'][$id]) && is_array($_SESSION['upload_print_items'][$id])) {
-                $path = resolveUploadPrintFile($id, $_SESSION['upload_print_items'][$id]);
+            if (!uploadPrintIsValidId($id)) {
+                $error = 'Ungültige Bild-ID.';
+            } elseif (isset($_SESSION['upload_print_items'][$id]) && is_array($_SESSION['upload_print_items'][$id])) {
+                $path = resolveUploadPrintFile($_SESSION['upload_print_items'][$id]);
                 if ($path !== null) {
                     @unlink($path);
                 }
@@ -130,10 +265,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
         } elseif ($action === 'print') {
             $id = trim((string) ($_POST['id'] ?? ''));
+            if (!uploadPrintIsValidId($id)) {
+                $error = 'Ungültige Bild-ID.';
+            }
             $item = $_SESSION['upload_print_items'][$id] ?? null;
-            if (!is_array($item)) {
+            if ($error === '' && !is_array($item)) {
                 $error = 'Bild nicht gefunden.';
-            } else {
+            } elseif ($error === '') {
                 $configuredApiKey = trim((string) ($cfg['print_api_key'] ?? ''));
                 $apiKeyConfigured = $configuredApiKey !== '' && $configuredApiKey !== 'CHANGE_ME_PRINT_API_KEY';
                 $printConfigured = $apiKeyConfigured || getConfiguredPrinterName($pdo) !== '';
@@ -149,47 +287,57 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         if ($openCount > 0) {
                             $error = 'Drucker ist gerade beschäftigt. Bitte warten, bis der aktuelle Job fertig ist.';
                         } else {
-                            $sourcePath = resolveUploadPrintFile($id, $item);
+                            $sourcePath = resolveUploadPrintFile($item);
                             if ($sourcePath === null) {
                                 $error = 'Upload-Datei fehlt.';
                             } else {
-                                $createdTs = nowTs();
-                                $insert = $pdo->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error, last_error, attempts, updated_at) VALUES(:photoId, :createdTs, :status, :error, :lastError, :attempts, :updatedAt)');
-                                $insert->execute([
-                                    ':photoId' => 'upload:' . $id,
-                                    ':createdTs' => $createdTs,
-                                    ':status' => 'queued',
-                                    ':error' => null,
-                                    ':lastError' => null,
-                                    ':attempts' => 0,
-                                    ':updatedAt' => $createdTs,
-                                ]);
-                                $jobId = (int) $pdo->lastInsertId();
+                                try {
+                                    $pdo->beginTransaction();
+                                    $createdTs = nowTs();
+                                    $insert = $pdo->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error, last_error, attempts, updated_at) VALUES(:photoId, :createdTs, :status, :error, :lastError, :attempts, :updatedAt)');
+                                    $insert->execute([
+                                        ':photoId' => 'upload:' . $id,
+                                        ':createdTs' => $createdTs,
+                                        ':status' => 'queued',
+                                        ':error' => null,
+                                        ':lastError' => null,
+                                        ':attempts' => 0,
+                                        ':updatedAt' => $createdTs,
+                                    ]);
+                                    $jobId = (int) $pdo->lastInsertId();
 
-                                ensureDir(pathPrintfiles());
-                                $ext = strtolower((string) pathinfo($sourcePath, PATHINFO_EXTENSION));
-                                if ($ext !== 'jpg' && $ext !== 'jpeg' && $ext !== 'png') {
-                                    $ext = 'jpg';
-                                }
-                                $printfile = pathPrintfiles() . '/' . $jobId . '.' . $ext;
-                                if (!@copy($sourcePath, $printfile)) {
-                                    $fail = $pdo->prepare('UPDATE print_jobs SET status = :status, last_error = :error, error = :error, last_error_at = :errorAt, updated_at = :updatedAt WHERE id = :id');
-                                    $fail->execute([
-                                        ':status' => 'failed_hard',
-                                        ':error' => 'RENDER_FAILED',
-                                        ':errorAt' => nowTs(),
-                                        ':updatedAt' => nowTs(),
-                                        ':id' => $jobId,
-                                    ]);
-                                    $error = 'Druckdatei konnte nicht erzeugt werden.';
-                                } else {
-                                    $update = $pdo->prepare('UPDATE print_jobs SET printfile_path = :printfilePath, updated_at = :updatedAt WHERE id = :id');
-                                    $update->execute([
-                                        ':printfilePath' => $printfile,
-                                        ':updatedAt' => nowTs(),
-                                        ':id' => $jobId,
-                                    ]);
-                                    $flash = 'Druckjob wurde angelegt.';
+                                    ensureDir(pathPrintfiles());
+                                    $ext = strtolower((string) pathinfo($sourcePath, PATHINFO_EXTENSION));
+                                    if ($ext !== 'jpg' && $ext !== 'jpeg' && $ext !== 'png') {
+                                        $ext = 'jpg';
+                                    }
+                                    $printfile = pathPrintfiles() . '/' . $jobId . '.' . $ext;
+                                    if (!@copy($sourcePath, $printfile)) {
+                                        $fail = $pdo->prepare('UPDATE print_jobs SET status = :status, last_error = :error, error = :error, last_error_at = :errorAt, updated_at = :updatedAt WHERE id = :id');
+                                        $fail->execute([
+                                            ':status' => 'failed_hard',
+                                            ':error' => 'RENDER_FAILED',
+                                            ':errorAt' => nowTs(),
+                                            ':updatedAt' => nowTs(),
+                                            ':id' => $jobId,
+                                        ]);
+                                        $error = 'Druckdatei konnte nicht erzeugt werden.';
+                                    } else {
+                                        $update = $pdo->prepare('UPDATE print_jobs SET printfile_path = :printfilePath, updated_at = :updatedAt WHERE id = :id');
+                                        $update->execute([
+                                            ':printfilePath' => $printfile,
+                                            ':updatedAt' => nowTs(),
+                                            ':id' => $jobId,
+                                        ]);
+                                        $flash = 'Druckjob wurde angelegt.';
+                                    }
+                                    $pdo->commit();
+                                } catch (Throwable $e) {
+                                    if ($pdo->inTransaction()) {
+                                        $pdo->rollBack();
+                                    }
+                                    write_log(pathLogs() . '/mobile.log', 'upload_print_exception ' . $e->getMessage());
+                                    $error = 'Druckjob konnte nicht angelegt werden.';
                                 }
                             }
                         }
@@ -267,4 +415,3 @@ mobileRenderLayout([
     'active_view' => 'favs',
     'content_html' => $content,
 ]);
-

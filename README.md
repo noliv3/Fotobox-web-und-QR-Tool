@@ -90,10 +90,12 @@ Wichtige Schlüssel:
 - `watch_path`, `data_path`, `import_mode`, `sd_card_path`
 - `gallery_window_minutes`, `retention_days`
 - `print_api_key`, `printer_name` (über Admin/kv)
+- `upload_print_max_files`, `upload_print_max_total_mb`, `upload_print_max_age_hours`, `upload_print_retention_hours`, `upload_print_max_dimension`
 - `paypal_me_base_url`, `order_zip_dir`
 - `admin_code`, `admin_password_hash`
 - `rate_limit_max`, `rate_limit_window_seconds`
 
 ## Changelog
+- 2026-03-05 – Upload-Print gehärtet: striktere Bildvalidierung (MIME + Dimension), Session-/Speicherlimits, robustere ID-Prüfung, transaktionale Job-Anlage, Session-Lock-Entschärfung für Upload-Bildausgabe, Cleanup alter Upload-Session-Verzeichnisse.
 - 2026-03-05 – Merkliste korrigiert: in `view=favs` bleibt `Alle als ZIP` erhalten; entfernt wurde nur der Upload-Akzent (`Eigenes Bild drucken`) aus den Merkliste-Actions.
 - 2026-03-05 – README konsolidiert: vollständige Prozessübersicht ergänzt, doppelte/überlange Historienblöcke entfernt, Reifegradbewertung „Wie nah an kompletter Fotobox“ ergänzt.
