@@ -97,7 +97,24 @@ if (!in_array($tab, ['jobs', 'orders', 'photos', 'printer'], true)) {
 
 $jobs = $pdo->query('SELECT j.id, j.photo_id, j.status, j.error, j.last_error, j.created_ts, j.printfile_path, p.id AS photo_exists FROM print_jobs j LEFT JOIN photos p ON p.id = j.photo_id ORDER BY j.id DESC LIMIT 120')->fetchAll();
 $orders = $pdo->query('SELECT id, created_at, name, email, photo_count, shipping_enabled, price_cents, status, zip_path FROM orders ORDER BY id DESC LIMIT 120')->fetchAll();
-$photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER BY ts DESC LIMIT 240')->fetchAll();
+$photos = $pdo->query(
+    'SELECT p.id, p.token, p.ts, COALESCE(m.view_count, 0) AS view_count, COALESCE(m.like_count, 0) AS like_count '
+    . 'FROM photos p '
+    . 'LEFT JOIN photo_metrics m ON m.photo_id = p.id '
+    . 'WHERE p.deleted = 0 ORDER BY p.ts DESC LIMIT 240'
+)->fetchAll();
+$topViewedPhotos = $pdo->query(
+    'SELECT p.id, p.token, p.ts, COALESCE(m.view_count, 0) AS view_count, COALESCE(m.like_count, 0) AS like_count '
+    . 'FROM photos p '
+    . 'LEFT JOIN photo_metrics m ON m.photo_id = p.id '
+    . 'WHERE p.deleted = 0 ORDER BY COALESCE(m.view_count, 0) DESC, p.ts DESC LIMIT 10'
+)->fetchAll();
+$topLikedPhotos = $pdo->query(
+    'SELECT p.id, p.token, p.ts, COALESCE(m.view_count, 0) AS view_count, COALESCE(m.like_count, 0) AS like_count '
+    . 'FROM photos p '
+    . 'LEFT JOIN photo_metrics m ON m.photo_id = p.id '
+    . 'WHERE p.deleted = 0 ORDER BY COALESCE(m.like_count, 0) DESC, p.ts DESC LIMIT 10'
+)->fetchAll();
 ?>
 <!doctype html>
 <html lang="de">
@@ -210,12 +227,53 @@ $photos = $pdo->query('SELECT id, token, ts FROM photos WHERE deleted = 0 ORDER 
             </table>
         </section>
     <?php elseif ($tab === 'photos'): ?>
+        <section class="stats-grid">
+            <article class="panel">
+                <h2>Top 10 geklickt</h2>
+                <table>
+                    <thead><tr><th>Bild</th><th>Klicks</th><th>Likes</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($topViewedPhotos as $photo): ?>
+                        <tr>
+                            <td>
+                                <a href="/mobile/photo.php?id=<?= urlencode((string) $photo['id']) ?>&amp;view=all&amp;return=<?= urlencode('/admin/?tab=photos') ?>">
+                                    <?= htmlspecialchars((string) $photo['id'], ENT_QUOTES, 'UTF-8') ?>
+                                </a>
+                            </td>
+                            <td><?= (int) ($photo['view_count'] ?? 0) ?></td>
+                            <td><?= (int) ($photo['like_count'] ?? 0) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </article>
+            <article class="panel">
+                <h2>Top 10 gelikt</h2>
+                <table>
+                    <thead><tr><th>Bild</th><th>Likes</th><th>Klicks</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($topLikedPhotos as $photo): ?>
+                        <tr>
+                            <td>
+                                <a href="/mobile/photo.php?id=<?= urlencode((string) $photo['id']) ?>&amp;view=all&amp;return=<?= urlencode('/admin/?tab=photos') ?>">
+                                    <?= htmlspecialchars((string) $photo['id'], ENT_QUOTES, 'UTF-8') ?>
+                                </a>
+                            </td>
+                            <td><?= (int) ($photo['like_count'] ?? 0) ?></td>
+                            <td><?= (int) ($photo['view_count'] ?? 0) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </article>
+        </section>
         <section class="panel">
             <div class="grid">
                 <?php foreach ($photos as $photo): ?>
                     <article class="tile" data-photo-id="<?= htmlspecialchars((string) $photo['id'], ENT_QUOTES, 'UTF-8') ?>">
                         <img src="/mobile/image.php?t=<?= urlencode((string) $photo['token']) ?>&amp;type=thumb" alt="Foto">
                         <p><?= date('d.m. H:i', (int) $photo['ts']) ?></p>
+                        <p><strong>Klicks:</strong> <?= (int) ($photo['view_count'] ?? 0) ?> <strong>Likes:</strong> <?= (int) ($photo['like_count'] ?? 0) ?></p>
                         <p><button class="danger" type="button" data-delete-photo data-csrf-token="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">Loeschen</button></p>
                     </article>
                 <?php endforeach; ?>

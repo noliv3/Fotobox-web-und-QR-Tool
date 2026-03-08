@@ -47,6 +47,7 @@ if (!$stmt->fetchColumn()) {
 switch ($action) {
     case 'add':
         $_SESSION['favs'][$photoId] = true;
+        recordPhotoLike($pdo, $photoId);
         responseJson(['ok' => true, 'state' => 'added']);
     case 'remove':
         unset($_SESSION['favs'][$photoId]);
@@ -58,6 +59,7 @@ switch ($action) {
             responseJson(['ok' => true, 'state' => 'removed']);
         }
         $_SESSION['favs'][$photoId] = true;
+        recordPhotoLike($pdo, $photoId);
         responseJson(['ok' => true, 'state' => 'added']);
     default:
         responseJson(['ok' => false], 400);

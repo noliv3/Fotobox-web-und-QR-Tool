@@ -190,6 +190,7 @@ function initDb(PDO $pdo): void
 
     ensurePrintSchema($pdo);
     ensureOrderSchema($pdo);
+    ensurePhotoMetricsSchema($pdo);
 
     ensureTableColumns($pdo, 'orders', [
         'created_at' => 'TEXT',
@@ -264,6 +265,21 @@ function ensurePrintSchema(PDO $pdo): void
     $pdo->exec("UPDATE print_jobs SET last_error = error WHERE last_error IS NULL AND error IS NOT NULL AND trim(error) != ''");
     $pdo->exec("UPDATE print_jobs SET attempts = 0 WHERE attempts IS NULL");
     $pdo->exec("UPDATE print_jobs SET updated_at = COALESCE(updated_at, created_ts, strftime('%s','now')) WHERE updated_at IS NULL OR updated_at = 0");
+}
+
+function ensurePhotoMetricsSchema(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS photo_metrics ('
+        . 'photo_id TEXT PRIMARY KEY, '
+        . 'view_count INTEGER NOT NULL DEFAULT 0, '
+        . 'like_count INTEGER NOT NULL DEFAULT 0, '
+        . 'last_viewed_at INTEGER NULL, '
+        . 'last_liked_at INTEGER NULL'
+        . ')'
+    );
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_photo_metrics_views ON photo_metrics(view_count DESC, last_viewed_at DESC)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_photo_metrics_likes ON photo_metrics(like_count DESC, last_liked_at DESC)');
 }
 
 function printBackoffSeconds(int $attempts): int
@@ -758,4 +774,40 @@ function is_photo_printable(array $photo): bool
 {
     $windowMinutes = (int) (config()['gallery_window_minutes'] ?? 15);
     return nowTs() - (int) ($photo['ts'] ?? 0) <= ($windowMinutes * 60);
+}
+
+function recordPhotoView(PDO $pdo, string $photoId): void
+{
+    if (!isValidPhotoId($photoId)) {
+        return;
+    }
+
+    $ts = nowTs();
+    $stmt = $pdo->prepare(
+        'INSERT INTO photo_metrics(photo_id, view_count, like_count, last_viewed_at, last_liked_at) '
+        . 'VALUES(:photoId, 1, 0, :ts, NULL) '
+        . 'ON CONFLICT(photo_id) DO UPDATE SET view_count = photo_metrics.view_count + 1, last_viewed_at = excluded.last_viewed_at'
+    );
+    $stmt->execute([
+        ':photoId' => $photoId,
+        ':ts' => $ts,
+    ]);
+}
+
+function recordPhotoLike(PDO $pdo, string $photoId): void
+{
+    if (!isValidPhotoId($photoId)) {
+        return;
+    }
+
+    $ts = nowTs();
+    $stmt = $pdo->prepare(
+        'INSERT INTO photo_metrics(photo_id, view_count, like_count, last_viewed_at, last_liked_at) '
+        . 'VALUES(:photoId, 0, 1, NULL, :ts) '
+        . 'ON CONFLICT(photo_id) DO UPDATE SET like_count = photo_metrics.like_count + 1, last_liked_at = excluded.last_liked_at'
+    );
+    $stmt->execute([
+        ':photoId' => $photoId,
+        ':ts' => $ts,
+    ]);
 }

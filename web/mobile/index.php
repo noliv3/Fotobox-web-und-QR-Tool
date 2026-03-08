@@ -65,7 +65,20 @@ if ($view === 'favs' && $photos !== []) {
     }
 }
 
+$currentListParams = [];
+if ($view !== 'recent') {
+    $currentListParams['view'] = $view;
+} elseif ($timeFilter !== '' && validateTimeHHMM($timeFilter)) {
+    $currentListParams['view'] = 'recent';
+    $currentListParams['time'] = $timeFilter;
+}
+$currentListUrl = '/mobile/';
+if ($currentListParams !== []) {
+    $currentListUrl .= '?' . http_build_query($currentListParams);
+}
+
 ob_start();
+echo '<div data-gallery-list>';
 if ($view === 'favs') {
     echo '<div class="panel actions">';
     if ($photos !== []) {
@@ -106,6 +119,15 @@ if ($photos === []) {
             $isFav = isset($_SESSION['favs'][(string) $photo['id']]);
             $photoCreatedAt = (int) ($photo['created_at'] ?? $photo['ts'] ?? 0);
             $isNew = ($now - $photoCreatedAt) <= ($windowMinutes * 60);
+            $photoLinkParams = [
+                'id' => (string) $photo['id'],
+                'view' => $view,
+                'return' => $currentListUrl,
+            ];
+            if ($view === 'recent' && $timeFilter !== '' && validateTimeHHMM($timeFilter)) {
+                $photoLinkParams['time'] = $timeFilter;
+            }
+            $photoLink = '/mobile/photo.php?' . http_build_query($photoLinkParams);
             ?>
             <article class="tile <?= $isFav ? 'is-fav' : '' ?>" data-photo-tile data-photo-id="<?= mobileEsc((string) $photo['id']) ?>">
                 <?php if ($isNew): ?>
@@ -124,7 +146,7 @@ if ($photos === []) {
                         </svg>
                     </span>
                 <?php endif; ?>
-                <a class="tile-link" href="/mobile/photo.php?id=<?= urlencode((string) $photo['id']) ?>">
+                <a class="tile-link" href="<?= mobileEsc($photoLink) ?>" data-photo-link>
                     <img src="/mobile/image.php?id=<?= urlencode((string) $photo['id']) ?>&amp;type=thumb" alt="Foto" loading="lazy" decoding="async" fetchpriority="low">
                     <time><?= date('d.m. H:i', (int) $photo['ts']) ?></time>
                 </a>
@@ -138,6 +160,7 @@ if ($photos === []) {
     </section>
     <?php
 }
+echo '</div>';
 $content = (string) ob_get_clean();
 
 mobileRenderLayout([

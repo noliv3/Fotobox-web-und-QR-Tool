@@ -15,6 +15,7 @@ function mobileRenderLayout(array $params): void
     $statusLine = (string) ($params['status_line'] ?? '');
     $activeView = (string) ($params['active_view'] ?? 'recent');
     $contentHtml = (string) ($params['content_html'] ?? '');
+    $bodyClass = trim((string) ($params['body_class'] ?? ''));
     $csrfToken = getCsrfToken();
 
     $impressumExists = is_file(ROOT . '/web/impressum.php') || is_file(ROOT . '/web/impressum/index.php');
@@ -28,17 +29,27 @@ function mobileRenderLayout(array $params): void
         <link rel="stylesheet" href="/mobile/style.css">
         <meta name="csrf-token" content="<?= mobileEsc($csrfToken) ?>">
     </head>
-    <body>
+    <body<?= $bodyClass !== '' ? ' class="' . mobileEsc($bodyClass) . '"' : '' ?>>
     <div class="mobile-shell">
         <header class="mobile-header">
             <a class="brand-link" href="/mobile/">Photobox</a>
             <div class="status-line"><?= mobileEsc($statusLine) ?></div>
-            <button type="button" class="menu-button" data-menu-button aria-label="Menü" aria-expanded="false">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M4 7h16M4 12h16M4 17h16"></path>
-                </svg>
-                <span class="sr-only">Menü</span>
-            </button>
+            <div class="header-actions">
+                <a class="header-upload-button <?= $activeView === 'upload' ? 'is-active' : '' ?>" href="/mobile/upload_print.php" aria-label="Eigenes Bild hochladen">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M12 4v10"></path>
+                        <path d="M8.5 7.5L12 4l3.5 3.5"></path>
+                        <path d="M7 19h10"></path>
+                    </svg>
+                    <span>Eigenes Bild hochladen</span>
+                </a>
+                <button type="button" class="menu-button" data-menu-button aria-label="Menü" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M4 7h16M4 12h16M4 17h16"></path>
+                    </svg>
+                    <span class="sr-only">Menü</span>
+                </button>
+            </div>
         </header>
 
         <nav class="mobile-tabs" aria-label="Navigation">
@@ -46,17 +57,6 @@ function mobileRenderLayout(array $params): void
             <a class="<?= $activeView === 'all' ? 'is-active' : '' ?>" href="/mobile/?view=all">Alle</a>
             <a class="<?= $activeView === 'favs' ? 'is-active' : '' ?>" href="/mobile/?view=favs">Merkliste</a>
         </nav>
-
-        <div class="mobile-quick-actions">
-            <a class="quick-upload-link <?= $activeView === 'upload' ? 'is-active' : '' ?>" href="/mobile/upload_print.php">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M12 4v10"></path>
-                    <path d="M8.5 7.5L12 4l3.5 3.5"></path>
-                    <path d="M5 14.5v2a2.5 2.5 0 0 0 2.5 2.5h9a2.5 2.5 0 0 0 2.5-2.5v-2"></path>
-                </svg>
-                <span>Eigenes Bild hochladen & drucken</span>
-            </a>
-        </div>
 
         <div class="menu-overlay" data-menu-overlay hidden>
             <div class="menu-panel" role="dialog" aria-label="Menue">

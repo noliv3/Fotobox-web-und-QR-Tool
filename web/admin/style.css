@@ -6,6 +6,7 @@ body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; background: #f3f5
 .camera-preview-wrap { width: 80px; height: 80px; border: 1px solid #c8d2e4; border-radius: 10px; overflow: hidden; background: #edf1f7; flex: 0 0 80px; }
 .camera-preview-wrap img { width: 80px; height: 80px; object-fit: cover; display: block; }
 .panel { background: #fff; border: 1px solid #d8deea; border-radius: 10px; padding: .8rem; margin-bottom: .9rem; }
+.panel h2 { margin-top: 0; }
 .tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .8rem; }
 .tabs a { text-decoration: none; padding: .5rem .7rem; border-radius: 7px; background: #eaf0fb; color: #1f2a3d; }
 .tabs a.is-active { background: #0f4fa8; color: #fff; }
@@ -20,6 +21,7 @@ button { background: #0f4fa8; color: #fff; border: 0; }
 .danger { background: #b22424; }
 .muted { color: #637087; }
 .inline { display: inline-flex; gap: .4rem; align-items: center; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .8rem; }
 
 @media (max-width: 560px) {
   .admin-head { align-items: center; }

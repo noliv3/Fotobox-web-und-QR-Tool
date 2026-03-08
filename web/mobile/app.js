@@ -2,6 +2,7 @@
   'use strict';
 
   const toastRoot = document.getElementById('toast-root');
+  const galleryStateKey = 'pb_gallery_state';
   let longPressFired = false;
   let pressTimer = null;
   let pressStart = null;
@@ -33,6 +34,29 @@
       body,
       credentials: 'same-origin'
     }).then(parseJsonResponse).catch(() => ({ ok: false }));
+  }
+
+  function getCurrentPath() {
+    return window.location.pathname + window.location.search;
+  }
+
+  function loadGalleryState() {
+    try {
+      const raw = window.sessionStorage.getItem(galleryStateKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveGalleryState(state) {
+    try {
+      window.sessionStorage.setItem(galleryStateKey, JSON.stringify(state));
+    } catch {
+      // ignore storage issues and keep navigation functional
+    }
   }
 
   function showToast(message, options = {}) {
@@ -257,6 +281,260 @@
     });
   }
 
+  function bindGalleryState() {
+    const gallery = document.querySelector('[data-gallery-list]');
+    if (!gallery) return;
+
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
+    const state = loadGalleryState();
+    if (state && state.pendingReturn === true && state.url === getCurrentPath()) {
+      const scrollTarget = Number(state.scrollY) || 0;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          window.scrollTo(0, scrollTarget);
+        });
+      });
+      state.pendingReturn = false;
+      saveGalleryState(state);
+    }
+
+    document.querySelectorAll('[data-photo-link]').forEach((link) => {
+      link.addEventListener('click', () => {
+        saveGalleryState({
+          url: getCurrentPath(),
+          scrollY: window.scrollY || window.pageYOffset || 0,
+          pendingReturn: false
+        });
+      });
+    });
+  }
+
+  function bindSmartBack() {
+    document.querySelectorAll('[data-smart-back]').forEach((button) => {
+      button.addEventListener('click', (ev) => {
+        ev.preventDefault();
+
+        const fallbackUrl = button.getAttribute('data-fallback-url') || '/mobile/';
+        const state = loadGalleryState();
+        const hasSafeGalleryState = !!(state && typeof state.url === 'string' && state.url.startsWith('/mobile/'));
+        if (hasSafeGalleryState) {
+          state.pendingReturn = true;
+          saveGalleryState(state);
+        }
+
+        let fallbackTimer = null;
+        const fallback = () => {
+          window.location.href = fallbackUrl;
+        };
+
+        if (hasSafeGalleryState && window.history.length > 1) {
+          fallbackTimer = window.setTimeout(fallback, 500);
+          window.addEventListener('pagehide', () => {
+            if (fallbackTimer) {
+              window.clearTimeout(fallbackTimer);
+            }
+          }, { once: true });
+          window.history.back();
+          return;
+        }
+
+        fallback();
+      });
+    });
+  }
+
+  function bindPhotoViewer() {
+    const viewer = document.querySelector('[data-photo-viewer]');
+    if (!viewer) return;
+
+    const stage = viewer.querySelector('[data-viewer-stage]');
+    const image = viewer.querySelector('[data-viewer-image]');
+    if (!stage || !image) return;
+
+    const prevUrl = (viewer.getAttribute('data-prev-url') || '').trim();
+    const nextUrl = (viewer.getAttribute('data-next-url') || '').trim();
+    const pointers = new Map();
+    let scale = 1;
+    let translateX = 0;
+    let translateY = 0;
+    let pinchDistance = 0;
+    let pinchStartScale = 1;
+    let gestureStart = null;
+    let lastTapAt = 0;
+
+    const clampScale = (value) => Math.min(4, Math.max(1, value));
+
+    const clampPan = () => {
+      const maxX = Math.max(0, ((image.clientWidth * scale) - stage.clientWidth) / 2);
+      const maxY = Math.max(0, ((image.clientHeight * scale) - stage.clientHeight) / 2);
+      translateX = Math.min(maxX, Math.max(-maxX, translateX));
+      translateY = Math.min(maxY, Math.max(-maxY, translateY));
+    };
+
+    const applyTransform = () => {
+      clampPan();
+      image.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
+      image.classList.toggle('is-zoomed', scale > 1.02);
+      stage.classList.toggle('is-zoomed', scale > 1.02);
+    };
+
+    const resetZoom = () => {
+      scale = 1;
+      translateX = 0;
+      translateY = 0;
+      applyTransform();
+    };
+
+    const toggleZoom = () => {
+      if (scale > 1.02) {
+        resetZoom();
+        return;
+      }
+      scale = 2.2;
+      translateX = 0;
+      translateY = 0;
+      applyTransform();
+    };
+
+    const getPointerDistance = () => {
+      const values = Array.from(pointers.values());
+      if (values.length < 2) return 0;
+      const dx = values[0].x - values[1].x;
+      const dy = values[0].y - values[1].y;
+      return Math.sqrt((dx * dx) + (dy * dy));
+    };
+
+    const navigateTo = (url) => {
+      if (!url) return;
+      window.location.replace(url);
+    };
+
+    const onPointerEnd = (ev) => {
+      const currentPoint = pointers.get(ev.pointerId) || { x: ev.clientX, y: ev.clientY };
+      pointers.delete(ev.pointerId);
+
+      if (pointers.size >= 2) {
+        pinchDistance = getPointerDistance();
+        pinchStartScale = scale;
+        return;
+      }
+
+      if (!gestureStart) {
+        return;
+      }
+
+      const dx = currentPoint.x - gestureStart.x;
+      const dy = currentPoint.y - gestureStart.y;
+      const movedMostlyHorizontal = Math.abs(dx) > 70 && Math.abs(dy) < 60;
+
+      if (scale <= 1.02 && movedMostlyHorizontal) {
+        if (dx < 0 && nextUrl) {
+          navigateTo(nextUrl);
+        } else if (dx > 0 && prevUrl) {
+          navigateTo(prevUrl);
+        }
+      } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+        const now = Date.now();
+        if ((now - lastTapAt) < 280) {
+          toggleZoom();
+          lastTapAt = 0;
+        } else {
+          lastTapAt = now;
+        }
+      }
+
+      gestureStart = null;
+    };
+
+    image.addEventListener('load', applyTransform);
+
+    stage.querySelectorAll('[data-viewer-prev]').forEach((button) => {
+      button.addEventListener('click', () => navigateTo(prevUrl));
+    });
+    stage.querySelectorAll('[data-viewer-next]').forEach((button) => {
+      button.addEventListener('click', () => navigateTo(nextUrl));
+    });
+
+    stage.addEventListener('dblclick', (ev) => {
+      ev.preventDefault();
+      toggleZoom();
+    });
+
+    stage.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      if (stage.setPointerCapture) {
+        stage.setPointerCapture(ev.pointerId);
+      }
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pointers.size === 1) {
+        gestureStart = {
+          x: ev.clientX,
+          y: ev.clientY,
+          translateX,
+          translateY
+        };
+      } else if (pointers.size === 2) {
+        pinchDistance = getPointerDistance();
+        pinchStartScale = scale;
+      }
+    });
+
+    stage.addEventListener('pointermove', (ev) => {
+      if (!pointers.has(ev.pointerId)) return;
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+      if (pointers.size >= 2) {
+        const currentDistance = getPointerDistance();
+        if (pinchDistance > 0) {
+          scale = clampScale(pinchStartScale * (currentDistance / pinchDistance));
+          if (scale <= 1.02) {
+            translateX = 0;
+            translateY = 0;
+          }
+          applyTransform();
+        }
+        return;
+      }
+
+      if (!gestureStart) {
+        return;
+      }
+
+      const dx = ev.clientX - gestureStart.x;
+      const dy = ev.clientY - gestureStart.y;
+      if (scale > 1.02) {
+        translateX = gestureStart.translateX + dx;
+        translateY = gestureStart.translateY + dy;
+        applyTransform();
+      }
+    });
+
+    stage.addEventListener('pointerup', onPointerEnd);
+    stage.addEventListener('pointercancel', onPointerEnd);
+    stage.addEventListener('pointerleave', (ev) => {
+      if (ev.pointerType === 'mouse') {
+        onPointerEnd(ev);
+      }
+    });
+
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'ArrowLeft' && prevUrl) {
+        navigateTo(prevUrl);
+      }
+      if (ev.key === 'ArrowRight' && nextUrl) {
+        navigateTo(nextUrl);
+      }
+      if (ev.key === 'Escape') {
+        resetZoom();
+      }
+    });
+
+    applyTransform();
+  }
+
 
   function bindOrderForm() {
     const form = document.querySelector('[data-order-form]');
@@ -317,9 +595,12 @@
   }
 
   bindMenu();
+  bindGalleryState();
+  bindSmartBack();
   bindFavButtons();
   bindPrintForms();
   bindOrderForm();
+  bindPhotoViewer();
   document.querySelectorAll('[data-photo-tile]').forEach(bindTileLongPress);
 
   window.showToast = showToast;
