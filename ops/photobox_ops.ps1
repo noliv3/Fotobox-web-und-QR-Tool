@@ -164,13 +164,17 @@ function Get-PhpLaunchPlan {
     }
 
     $normalFail = ($normalVersion.ExitCode -ne 0) -or ($normalVersion.Output -match 'Parse error')
-    $phpArgs = @()
+    $runtimeArgs = @(
+        '-d', 'upload_max_filesize=16M',
+        '-d', 'post_max_size=18M'
+    )
+    $phpArgs = @() + $runtimeArgs
     $diagnosticArgs = @()
     $mode = 'normal'
 
     if ($normalFail) {
         $mode = 'no_ini'
-        $phpArgs = @('-n')
+        $phpArgs = @('-n') + $runtimeArgs
         $diagnosticArgs = @('-n')
         Write-PhotoboxLog -Path $SupervisorLog -Level 'WARN' -Message 'php.ini kaputt, starte mit -n (ohne ini).'
 

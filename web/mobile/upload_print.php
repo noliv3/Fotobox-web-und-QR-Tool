@@ -28,6 +28,43 @@ function uploadPrintIsValidId(string $id): bool
     return (bool) preg_match('/^[a-f0-9]{24}$/', $id);
 }
 
+function uploadPrintIniSizeToBytes(string $value): int
+{
+    $normalized = strtolower(trim($value));
+    if ($normalized === '') {
+        return 0;
+    }
+
+    $unit = substr($normalized, -1);
+    $number = (int) $normalized;
+    if ($unit === 'g') {
+        return $number * 1024 * 1024 * 1024;
+    }
+    if ($unit === 'm') {
+        return $number * 1024 * 1024;
+    }
+    if ($unit === 'k') {
+        return $number * 1024;
+    }
+
+    return $number;
+}
+
+function uploadPrintPhpRequestTooLarge(): bool
+{
+    $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($contentLength <= 0) {
+        return false;
+    }
+
+    $postMaxBytes = uploadPrintIniSizeToBytes((string) ini_get('post_max_size'));
+    if ($postMaxBytes <= 0) {
+        return false;
+    }
+
+    return $contentLength > $postMaxBytes && $_POST === [] && $_FILES === [];
+}
+
 function uploadPrintSessionDir(): string
 {
     $sessionId = preg_replace('/[^a-zA-Z0-9]/', '', session_id());
@@ -181,8 +218,20 @@ function uploadPrintStoreItem(array $file, array $cfg): array
         return [false, 'Upload-Limit für diese Session erreicht. Bitte erst Bilder löschen.'];
     }
 
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime = (string) ($finfo->file($tmp) ?: '');
+    $imageInfo = @getimagesize($tmp);
+    if (!is_array($imageInfo)) {
+        return [false, 'Datei ist kein gültiges Bild.'];
+    }
+
+    $mime = '';
+    if (class_exists('finfo')) {
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = strtolower(trim((string) ($finfo->file($tmp) ?: '')));
+    }
+    if ($mime === '') {
+        $mime = strtolower(trim((string) ($imageInfo['mime'] ?? '')));
+    }
+
     $ext = '';
     if ($mime === 'image/jpeg') {
         $ext = 'jpg';
@@ -192,10 +241,6 @@ function uploadPrintStoreItem(array $file, array $cfg): array
         return [false, 'Nur JPG oder PNG ist erlaubt.'];
     }
 
-    $imageInfo = @getimagesize($tmp);
-    if (!is_array($imageInfo)) {
-        return [false, 'Datei ist kein gültiges Bild.'];
-    }
     $width = (int) ($imageInfo[0] ?? 0);
     $height = (int) ($imageInfo[1] ?? 0);
     if ($width <= 0 || $height <= 0) {
@@ -240,15 +285,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $action = (string) ($_POST['action'] ?? '');
 
         if ($action === 'upload') {
-            $rateKey = 'rl_upload_print_' . getClientIp();
-            if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['rate_limit_window_seconds'])) {
-                $error = 'Zu viele Anfragen, bitte kurz warten.';
+            if (uploadPrintPhpRequestTooLarge()) {
+                $limitMb = max(1, (int) floor(uploadPrintIniSizeToBytes((string) ini_get('post_max_size')) / (1024 * 1024)));
+                $error = 'Datei ist zu groß für den aktuellen Server-Upload (maximal ' . $limitMb . ' MB).';
             } else {
-                [$ok, $message] = uploadPrintStoreItem($_FILES['upload_file'] ?? [], $cfg);
-                if ($ok) {
-                    $flash = (string) $message;
+                $rateKey = 'rl_upload_print_' . getClientIp();
+                if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['rate_limit_window_seconds'])) {
+                    $error = 'Zu viele Anfragen, bitte kurz warten.';
                 } else {
-                    $error = (string) $message;
+                    [$ok, $message] = uploadPrintStoreItem($_FILES['upload_file'] ?? [], $cfg);
+                    if ($ok) {
+                        $flash = (string) $message;
+                    } else {
+                        $error = (string) $message;
+                    }
                 }
             }
         } elseif ($action === 'delete') {
@@ -371,7 +421,7 @@ ob_start();
         <input type="hidden" name="csrf_token" value="<?= mobileEsc($csrfToken) ?>">
         <input type="hidden" name="action" value="upload">
         <input type="file" name="upload_file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required>
-        <button type="submit">Bild hochladen</button>
+        <button type="submit" class="upload-submit">Bild hochladen</button>
     </form>
 </div>
 
@@ -412,6 +462,6 @@ $content = (string) ob_get_clean();
 mobileRenderLayout([
     'title' => 'Eigenes Bild drucken',
     'status_line' => 'Eigenes Bild drucken',
-    'active_view' => 'favs',
+    'active_view' => 'upload',
     'content_html' => $content,
 ]);

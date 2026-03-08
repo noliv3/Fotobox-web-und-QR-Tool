@@ -79,6 +79,7 @@
 - 2026-03-05 – „Verfeinern und Härten aller Funktionen“ wird als Härtung der sicherheits-/betriebsrelevanten Laufzeitpfade umgesetzt (Upload/Preview/Print/Cleanup), nicht als kompletter Refactor aller Dateien.
 
 ## Changelog
+- 2026-03-08 – Upload-Print kompatibler gemacht: Upload-MIME-Prüfung fällt bei fehlendem `fileinfo`/`finfo` auf Bildmetadaten zurück, der PHP-Webstart hebt Upload-/POST-Limits passend zum 15-MB-Flow an, und die Mobile-Gäste-UI zeigt einen sichtbaren Upload-/Druck-Direktlink plus besser erkennbaren Menübutton.
 - 2026-03-05 – Weiteres Runtime-Hardening: transaktionale Druckjob-Anlage in Mobile-APIs vereinheitlicht, Session-/Header-Härtung im Bootstrap erweitert, Import akzeptiert nur valide JPEGs, zusätzliche Eingabevalidierung für Bestellung/Admin.
 - 2026-03-05 – Upload-Print-Flow gehärtet: Upload-Validierung und Session-Limits ergänzt, Upload-Bildausgabe entkoppelt (Session-Lock), transaktionale Job-Anlage stabilisiert, Cleanup alter Upload-Session-Verzeichnisse ergänzt.
 - 2026-03-05 – Klarstellung umgesetzt: In der Merkliste (`/mobile/?view=favs`) bleibt der ZIP-Download (`Alle als ZIP`) aktiv; nur der Upload-Akzent wurde aus den Merkliste-Actions entfernt.

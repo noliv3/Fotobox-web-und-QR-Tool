@@ -96,6 +96,7 @@ Wichtige Schlüssel:
 - `rate_limit_max`, `rate_limit_window_seconds`
 
 ## Changelog
+- 2026-03-08 – Upload-Print auf Hosts ohne `fileinfo`/`finfo` repariert: MIME-Fallback nutzt nun Bildmetadaten statt Fatal Error; PHP-Webstart setzt Upload-/POST-Limits passend zum 15-MB-Flow; Mobile-UI zeigt zusätzlich einen sichtbaren Direktzugang zu `Eigenes Bild hochladen & drucken` und der Menübutton nutzt ein echtes Icon mit klarerem Fokuszustand.
 - 2026-03-05 – Weiteres Hardening: Mobile-Print-APIs transaktional gegen Race-Conditions bei Job-Erzeugung, Session-Cookies/JSON- und Download-Header gehärtet, Import prüft JPEG-Inhalte strenger, Order-E-Mail serverseitig validiert, harter PayPal-Fallback-Link entfernt.
 - 2026-03-05 – Upload-Print gehärtet: striktere Bildvalidierung (MIME + Dimension), Session-/Speicherlimits, robustere ID-Prüfung, transaktionale Job-Anlage, Session-Lock-Entschärfung für Upload-Bildausgabe, Cleanup alter Upload-Session-Verzeichnisse.
 - 2026-03-05 – Merkliste korrigiert: in `view=favs` bleibt `Alle als ZIP` erhalten; entfernt wurde nur der Upload-Akzent (`Eigenes Bild drucken`) aus den Merkliste-Actions.
