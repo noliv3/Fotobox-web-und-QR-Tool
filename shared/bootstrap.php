@@ -6,6 +6,32 @@ require_once __DIR__ . '/utils.php';
 
 const ROOT = __DIR__ . '/..';
 
+function isHttpsRequest(): bool
+{
+    $https = strtolower(trim((string) ($_SERVER['HTTPS'] ?? '')));
+    if ($https !== '' && $https !== 'off' && $https !== '0') {
+        return true;
+    }
+
+    $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    if ($forwardedProto === 'https') {
+        return true;
+    }
+
+    return (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443;
+}
+
+function secureSessionCookieParams(): array
+{
+    return [
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => isHttpsRequest(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+}
+
 function config(): array
 {
     static $cfg = null;
@@ -327,6 +353,7 @@ function responseJson(array $payload, int $status = 200): void
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
+    header('X-Content-Type-Options: nosniff');
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -392,8 +419,14 @@ function sendFileCached(string $path, string $mime, ?string $downloadName = null
     header('ETag: ' . $etag);
     header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
     header('Content-Type: ' . $mime);
+    header('X-Content-Type-Options: nosniff');
     if ($downloadName !== null && $downloadName !== '') {
-        header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+        $safeName = preg_replace('/[\x00-\x1F\x7F"\\\\;]+/', '_', $downloadName) ?? '';
+        $safeName = trim($safeName);
+        if ($safeName === '') {
+            $safeName = 'download.bin';
+        }
+        header('Content-Disposition: attachment; filename="' . $safeName . '"');
     }
     header('Content-Length: ' . (string) $size);
     readfile($path);
@@ -403,6 +436,11 @@ function sendFileCached(string $path, string $mime, ?string $downloadName = null
 function isValidToken(string $token): bool
 {
     return (bool) preg_match('/^[a-f0-9]{24,128}$/', $token);
+}
+
+function isValidPhotoId(string $photoId): bool
+{
+    return (bool) preg_match('/^[a-f0-9]{32}$/', $photoId);
 }
 
 function findPhotoByToken(PDO $pdo, string $token): ?array
@@ -485,6 +523,9 @@ function initMobileSession(): void
 {
     session_name('pb_mobile');
     if (session_status() !== PHP_SESSION_ACTIVE) {
+        ini_set('session.use_strict_mode', '1');
+        ini_set('session.use_only_cookies', '1');
+        session_set_cookie_params(secureSessionCookieParams());
         session_start();
     }
 
@@ -615,6 +656,9 @@ function requireAdminSilently(): string
 
     session_name('pb_admin');
     if (session_status() !== PHP_SESSION_ACTIVE) {
+        ini_set('session.use_strict_mode', '1');
+        ini_set('session.use_only_cookies', '1');
+        session_set_cookie_params(secureSessionCookieParams());
         session_start();
     }
 

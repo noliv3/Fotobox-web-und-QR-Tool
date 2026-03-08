@@ -25,6 +25,11 @@ if (!verifyCsrfToken($csrfToken)) {
     responseJson(['error' => 'forbidden'], 403);
 }
 
+$apiKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
+if ($apiKeyConfigured && $apiKey !== '' && (!is_string($apiKey) || !hash_equals($configuredApiKey, $apiKey))) {
+    responseJson(['error' => 'forbidden'], 403);
+}
+
 $rateKey = 'rl_print_' . getClientIp();
 if (!rateLimitCheck($pdo, $rateKey, (int) $cfg['rate_limit_max'], (int) $cfg['rate_limit_window_seconds'])) {
     responseJson(['error' => 'rate_limited'], 429);
@@ -60,41 +65,50 @@ if (($openCount + count($selected)) > 50) {
 }
 
 $jobIds = [];
-foreach ($selected as $photo) {
-    $createdTs = nowTs();
-    $insert = $pdo->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error, last_error, attempts, updated_at) VALUES(:photoId, :createdTs, :status, :error, :lastError, :attempts, :updatedAt)');
-    $insert->execute([
-        ':photoId' => $photo['id'],
-        ':createdTs' => $createdTs,
-        ':status' => 'queued',
-        ':error' => null,
-        ':lastError' => null,
-        ':attempts' => 0,
-        ':updatedAt' => $createdTs,
-    ]);
+$createdPrintfiles = [];
+try {
+    $pdo->beginTransaction();
+    foreach ($selected as $photo) {
+        $createdTs = nowTs();
+        $insert = $pdo->prepare('INSERT INTO print_jobs(photo_id, created_ts, status, error, last_error, attempts, updated_at) VALUES(:photoId, :createdTs, :status, :error, :lastError, :attempts, :updatedAt)');
+        $insert->execute([
+            ':photoId' => $photo['id'],
+            ':createdTs' => $createdTs,
+            ':status' => 'queued',
+            ':error' => null,
+            ':lastError' => null,
+            ':attempts' => 0,
+            ':updatedAt' => $createdTs,
+        ]);
 
-    $jobId = (int) $pdo->lastInsertId();
-    $printfile = createPrintfileForJob((string) $photo['id'], $jobId);
-    if ($printfile === null) {
-        $failed = $pdo->prepare('UPDATE print_jobs SET status = :status, last_error = :error, error = :error, last_error_at = :errorAt, updated_at = :updatedAt WHERE id = :id');
-        $failed->execute([
-            ':status' => 'failed_hard',
-            ':error' => 'RENDER_FAILED',
-            ':errorAt' => nowTs(),
+        $jobId = (int) $pdo->lastInsertId();
+        $printfile = createPrintfileForJob((string) $photo['id'], $jobId);
+        if ($printfile === null) {
+            throw new RuntimeException('render_failed');
+        }
+
+        $update = $pdo->prepare('UPDATE print_jobs SET printfile_path = :printfilePath, updated_at = :updatedAt WHERE id = :id');
+        $update->execute([
+            ':printfilePath' => $printfile,
             ':updatedAt' => nowTs(),
             ':id' => $jobId,
         ]);
-        responseJson(['ok' => false, 'error' => 'render_failed', 'job_ids' => $jobIds], 500);
+
+        $jobIds[] = $jobId;
+        $createdPrintfiles[] = $printfile;
     }
-
-    $update = $pdo->prepare('UPDATE print_jobs SET printfile_path = :printfilePath, updated_at = :updatedAt WHERE id = :id');
-    $update->execute([
-        ':printfilePath' => $printfile,
-        ':updatedAt' => nowTs(),
-        ':id' => $jobId,
-    ]);
-
-    $jobIds[] = $jobId;
+    $pdo->commit();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    foreach ($createdPrintfiles as $path) {
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+    write_log(pathLogs() . '/mobile.log', 'api_print_favs_exception ' . $e->getMessage());
+    responseJson(['ok' => false, 'error' => 'render_failed', 'job_ids' => []], 500);
 }
 
 responseJson([

@@ -29,6 +29,16 @@ function formatEurFromCents(int $cents): string
     return number_format($cents / 100, 2, ',', '.');
 }
 
+function sanitizeOrderText(string $value, int $maxLen): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+    $value = preg_replace('/[\x00-\x1F\x7F]/u', '', $value) ?? '';
+    return textSubstr(trim($value), 0, $maxLen);
+}
+
 function orderErrorPage(string $title, string $message): void
 {
     ob_start();
@@ -74,16 +84,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $name = sanitizeGuestName((string) ($_POST['name'] ?? ''));
-    $email = textSubstr(trim((string) ($_POST['email'] ?? '')), 0, 160);
+    $email = sanitizeOrderText((string) ($_POST['email'] ?? ''), 160);
     $shippingEnabled = (($_POST['shipping_enabled'] ?? '') === '1');
 
-    $addrStreet = textSubstr(trim((string) ($_POST['addr_street'] ?? '')), 0, 160);
-    $addrZip = textSubstr(trim((string) ($_POST['addr_zip'] ?? '')), 0, 30);
-    $addrCity = textSubstr(trim((string) ($_POST['addr_city'] ?? '')), 0, 120);
-    $addrCountry = textSubstr(trim((string) ($_POST['addr_country'] ?? '')), 0, 120);
+    $addrStreet = sanitizeOrderText((string) ($_POST['addr_street'] ?? ''), 160);
+    $addrZip = sanitizeOrderText((string) ($_POST['addr_zip'] ?? ''), 30);
+    $addrCity = sanitizeOrderText((string) ($_POST['addr_city'] ?? ''), 120);
+    $addrCountry = sanitizeOrderText((string) ($_POST['addr_country'] ?? ''), 120);
 
     if ($name === '' || $email === '') {
         orderErrorPage('Pflichtfelder fehlen', 'Name und E-Mail sind erforderlich.');
+    }
+    if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        orderErrorPage('Ungueltige E-Mail', 'Bitte eine gueltige E-Mail-Adresse eingeben.');
     }
 
     if ($shippingEnabled && ($addrStreet === '' || $addrZip === '' || $addrCity === '' || $addrCountry === '')) {

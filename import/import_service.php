@@ -85,6 +85,41 @@ function run_ingest_file(string $path): void
     process_source_file($path);
 }
 
+function validate_source_jpeg(string $sourceFile): string
+{
+    $size = filesize($sourceFile);
+    if (!is_int($size) || $size <= 0) {
+        return 'empty_file';
+    }
+    if ($size > 50 * 1024 * 1024) {
+        return 'file_too_large';
+    }
+
+    if (class_exists('finfo')) {
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = strtolower(trim((string) ($finfo->file($sourceFile) ?: '')));
+        if ($mime !== 'image/jpeg') {
+            return 'mime_not_jpeg';
+        }
+    }
+
+    $imageInfo = @getimagesize($sourceFile);
+    if (!is_array($imageInfo)) {
+        return 'invalid_image';
+    }
+
+    $width = (int) ($imageInfo[0] ?? 0);
+    $height = (int) ($imageInfo[1] ?? 0);
+    if ($width <= 0 || $height <= 0) {
+        return 'invalid_dimensions';
+    }
+    if ($width > 20000 || $height > 20000) {
+        return 'dimensions_too_large';
+    }
+
+    return '';
+}
+
 function process_source_file(string $sourceFile): void
 {
     $paths = app_paths();
@@ -99,6 +134,12 @@ function process_source_file(string $sourceFile): void
     $extension = strtolower((string) pathinfo($sourceFile, PATHINFO_EXTENSION));
     if (!in_array($extension, ['jpg', 'jpeg'], true)) {
         write_log($log, 'Übersprungen (kein JPEG): ' . basename($sourceFile));
+        return;
+    }
+
+    $validationError = validate_source_jpeg($sourceFile);
+    if ($validationError !== '') {
+        write_log($log, 'Übersprungen (ungültiges JPEG: ' . $validationError . '): ' . basename($sourceFile));
         return;
     }
 

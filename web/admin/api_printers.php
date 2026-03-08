@@ -127,6 +127,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $name = trim((string) ($_POST['name'] ?? ''));
+    if ($name !== '') {
+        if (strlen($name) > 160) {
+            responseJson(['ok' => false, 'error' => 'name_too_long'], 400);
+        }
+        if (preg_match('/[\x00-\x1F\x7F]/', $name)) {
+            responseJson(['ok' => false, 'error' => 'invalid_name'], 400);
+        }
+    }
     setSetting($pdo, 'printer_name', $name);
     adminActionLog('set_printer', ['name' => $name]);
     responseJson(['ok' => true, 'name' => $name]);

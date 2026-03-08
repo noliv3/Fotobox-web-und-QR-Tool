@@ -17,7 +17,7 @@ if (!verifyCsrfToken((string) ($_POST['csrf_token'] ?? ''))) {
 }
 
 $photoId = trim((string) ($_POST['id'] ?? ''));
-if ($photoId === '') {
+if ($photoId === '' || !isValidPhotoId($photoId)) {
     responseJson(['ok' => false], 400);
 }
 

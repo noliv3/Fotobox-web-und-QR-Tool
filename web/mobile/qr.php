@@ -56,5 +56,11 @@ if ($data === '') {
     echo 'missing_data';
     exit;
 }
+if (strlen($data) > 2048) {
+    http_response_code(400);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'data_too_long';
+    exit;
+}
 
 MiniQrPng::output($data);

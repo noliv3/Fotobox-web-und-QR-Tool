@@ -10,6 +10,7 @@ noIndexHeaders();
 initMobileSession();
 
 $pdo = pdo();
+$cfg = config();
 $orderToken = trim((string) ($_GET['o'] ?? ''));
 
 $order = null;
@@ -34,8 +35,12 @@ if ($order === null) {
     $priceCents = (int) ($order['price_cents'] ?? 0);
     $paypalUrl = trim((string) ($order['paypal_url'] ?? ''));
     if ($paypalUrl === '') {
-        $paypalUrl = 'https://paypal.me/noliv3/' . number_format($priceCents / 100, 2, '.', '');
+        $baseUrl = rtrim((string) ($cfg['paypal_me_base_url'] ?? ''), '/');
+        if ($baseUrl !== '' && $baseUrl !== 'https://paypal.me/DEINNAME') {
+            $paypalUrl = $baseUrl . '/' . number_format($priceCents / 100, 2, '.', '');
+        }
     }
+    $hasPaypalUrl = $paypalUrl !== '';
     ?>
     <div class="panel">
         <h2>Bestellung abgeschlossen</h2>
@@ -62,11 +67,15 @@ if ($order === null) {
                 <span class="step-no">2</span>
                 <div>
                     <strong>PayPal oeffnen</strong>
-                    <p>Der Link enthaelt den Betrag bereits vorausgefuellt.</p>
-                    <p>
-                        <a class="button" href="<?= mobileEsc($paypalUrl) ?>" target="_blank" rel="noopener noreferrer">PayPal jetzt oeffnen</a>
-                    </p>
-                    <p class="muted"><a href="<?= mobileEsc($paypalUrl) ?>" target="_blank" rel="noopener noreferrer"><?= mobileEsc($paypalUrl) ?></a></p>
+                    <?php if ($hasPaypalUrl): ?>
+                        <p>Der Link enthaelt den Betrag bereits vorausgefuellt.</p>
+                        <p>
+                            <a class="button" href="<?= mobileEsc($paypalUrl) ?>" target="_blank" rel="noopener noreferrer">PayPal jetzt oeffnen</a>
+                        </p>
+                        <p class="muted"><a href="<?= mobileEsc($paypalUrl) ?>" target="_blank" rel="noopener noreferrer"><?= mobileEsc($paypalUrl) ?></a></p>
+                    <?php else: ?>
+                        <p>PayPal-Link derzeit nicht konfiguriert. Bitte Brautpaar/Team ansprechen.</p>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -79,7 +88,9 @@ if ($order === null) {
             </div>
         </div>
 
-        <p><img src="/mobile/qr.php?d=<?= urlencode($paypalUrl) ?>" alt="PayPal QR-Code" width="220" height="220"></p>
+        <?php if ($hasPaypalUrl): ?>
+            <p><img src="/mobile/qr.php?d=<?= urlencode($paypalUrl) ?>" alt="PayPal QR-Code" width="220" height="220"></p>
+        <?php endif; ?>
 
         <?php if (trim((string) ($order['zip_path'] ?? '')) === ''): ?>
             <p>ZIP derzeit nicht verfuegbar.</p>

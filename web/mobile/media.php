@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../shared/bootstrap.php';
 
+noIndexHeaders();
+
 $token = $_GET['t'] ?? '';
 $type = $_GET['type'] ?? 'photo';
 
@@ -27,21 +29,27 @@ if (!$photo) {
 }
 
 $paths = app_paths();
-$file = $type === 'thumb'
-    ? $paths['thumbs'] . '/' . $photo['id'] . '.jpg'
-    : $paths['originals'] . '/' . $photo['id'] . '.jpg';
+$filename = trim((string) ($photo['filename'] ?? ''));
+if ($filename === '') {
+    $filename = (string) $photo['id'] . '.jpg';
+}
+$thumbFilename = trim((string) ($photo['thumb_filename'] ?? ''));
+if ($thumbFilename === '') {
+    $thumbFilename = (string) $photo['id'] . '.jpg';
+}
 
-if (!is_file($file)) {
+$file = $type === 'thumb'
+    ? resolvePathInDirectory($paths['thumbs'], $thumbFilename)
+    : resolvePathInDirectory($paths['originals'], $filename);
+
+if ($file === null || !is_file($file)) {
     http_response_code(404);
-    echo 'Datei fehlt.';
     exit;
 }
 
-header('Content-Type: image/jpeg');
-header('X-Content-Type-Options: nosniff');
-
 if ($type === 'download') {
-    header('Content-Disposition: attachment; filename="photo-' . $photo['id'] . '.jpg"');
+    $downloadName = 'photo_' . preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $photo['id']) . '.jpg';
+    sendFileCached($file, 'image/jpeg', $downloadName);
 }
 
-readfile($file);
+sendFileCached($file, 'image/jpeg');

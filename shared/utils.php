@@ -119,10 +119,15 @@ function getOrCreateSessionToken(): string
     }
 
     $token = generateToken(18);
+    $secureCookie = false;
+    $https = strtolower(trim((string) ($_SERVER['HTTPS'] ?? '')));
+    if (($https !== '' && $https !== 'off' && $https !== '0') || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443) {
+        $secureCookie = true;
+    }
     setcookie('pb_sess', $token, [
         'expires' => nowTs() + 86400 * 30,
         'path' => '/',
-        'secure' => false,
+        'secure' => $secureCookie,
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
